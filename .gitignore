@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+bin/
+lib/*.a
+*.o
+*.so
+*.dylib
+*.a
+
+# Package archives and databases
+*.oaa
+*.okra
+*.db
+*.idx
+*.dat
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Temporary files
+/tmp/
+*.tmp
+*.tmp.*
