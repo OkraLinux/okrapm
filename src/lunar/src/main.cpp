@@ -11,7 +11,14 @@
 using namespace okrapm;
 
 void print_banner() {
-    std::cout << "Lunar Package & System State Manager v1.0.0 (Okra Rolling Linux)\n\n";
+    std::cout << "\033[1;32m"
+              << "   ____   __ __  ___     ____   ____   __  ___\n"
+              << "  / __ \\ / //_/ /   |   / __ \\ / __ \\ /  |/  /\n"
+              << " / / / // ,<   / /| |  / /_/ // /_/ // /|_/ / \n"
+              << "/ /_/ // /| | / ___ | / _, _// ____// /  / /  \n"
+              << "\\____//_/ |_|/_/  |_|/_/ |_|/_/    /_/  /_/   \n"
+              << "\033[0m\n"
+              << "Lunar Package & System State Manager v1.0.0 (Okra Rolling Linux)\n\n";
 }
 
 void print_help() {
