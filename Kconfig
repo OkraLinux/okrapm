@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+menu "OkraPM package manager"
+    config OKRAPM
+        tristate "Enable OkraPM kernel package manager"
+        default n
+        help
+          Enable a lightweight package manager built into the kernel.
+          It provides sysfs interfaces under /sys/okrapm/ and optional
+          module loading support.
+endmenu

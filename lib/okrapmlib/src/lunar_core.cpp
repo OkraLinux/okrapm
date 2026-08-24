@@ -52,6 +52,7 @@ LunarCore::InstallResult LunarCore::install(const std::vector<std::string>& refs
 
     std::vector<ObjectRef> parsed_refs;
     std::vector<Object> artifact_objects;
+    std::vector<std::string> artifact_paths;
 
     for (const auto& r : refs) {
         auto parsed = ObjectRef::parse(r);
@@ -68,7 +69,10 @@ LunarCore::InstallResult LunarCore::install(const std::vector<std::string>& refs
                 return res;
             }
             auto obj = meta->to_object();
+            // 将本地文件绝对路径保存至 repository 字段以便后续安装时解压
+            obj.set_repository("local:" + fs::absolute(parsed->artifact_path()).string());
             artifact_objects.push_back(obj);
+            artifact_paths.push_back(fs::absolute(parsed->artifact_path()).string());
         } else {
             parsed_refs.push_back(*parsed);
         }
@@ -86,7 +90,8 @@ LunarCore::InstallResult LunarCore::install(const std::vector<std::string>& refs
         all_ops = resolve_res.operations;
     }
 
-    for (const auto& art_obj : artifact_objects) {
+    for (size_t i = 0; i < artifact_objects.size(); ++i) {
+        const auto& art_obj = artifact_objects[i];
         auto current = system_store_->find(art_obj.ns(), art_obj.name());
         if (current) {
             all_ops.emplace_back(OperationType::Update, art_obj, *current);
@@ -403,11 +408,20 @@ bool LunarCore::commit_transaction(Transaction& txn) {
             case OperationType::Upgrade:
             case OperationType::Sync: {
                 extensions().trigger_hooks(HookType::PreInstall, txn);
-                auto repo = repo_mgr_->get_repository_for_object(op.target());
-                if (repo) {
-                    auto art_path = repo->fetch_artifact(op.target());
-                    if (art_path && fs::exists(*art_path)) {
-                        ArtifactExtractor::extract(*art_path, data_dir_ + "/installed/" + op.target().full_name());
+                if (op.target().repository().rfind("local:", 0) == 0) {
+                    std::string local_path = op.target().repository().substr(6);
+                    if (fs::exists(local_path)) {
+                        ArtifactExtractor::extract(local_path, "/");
+                    }
+                } else if (op.target().repository() == "local-artifact") {
+                    // 本地 artifact 的归档路径由 install() 传入并保留在目标对象中
+                } else {
+                    auto repo = repo_mgr_->get_repository_for_object(op.target());
+                    if (repo) {
+                        auto art_path = repo->fetch_artifact(op.target());
+                        if (art_path && fs::exists(*art_path)) {
+                            ArtifactExtractor::extract(*art_path, "/");
+                        }
                     }
                 }
                 system_store_->install(op.target());
