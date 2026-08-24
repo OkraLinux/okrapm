@@ -38,9 +38,17 @@ LunarCore::LunarCore(const std::string& data_dir)
     oaa_backend.type = ExtensionType::ArtifactBackend;
     extensions().register_extension(oaa_backend);
 
+    ExtensionInfo okra_backend;
+    okra_backend.name = "okrapm";
+    okra_backend.version = "3.0.0";
+    okra_backend.description = "Okra Package Format (.okra) & Legacy okpm Compatibility Loader";
+    okra_backend.type = ExtensionType::ArtifactBackend;
+    extensions().register_extension(okra_backend);
+
     // 自动加载系统和用户插件
     extensions().load_plugins_from_directory(data_dir_ + "/extensions");
     extensions().load_plugins_from_directory("/usr/lib/lunar/extensions");
+    extensions().load_plugins_from_directory("/var/lib/okpm/extensions");
 }
 
 LunarCore::InstallResult LunarCore::install(const std::vector<std::string>& refs, bool plan_only) {

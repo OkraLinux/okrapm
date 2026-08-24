@@ -208,6 +208,57 @@ void test_artifact_engine() {
     assert(inst_obj->name() == "hello");
     assert(inst_obj->ns() == "demo");
 
+    // 5. 测试 .okra 格式包构建、元数据解析 (deps/desc) 以及通过 LunarCore 加载与安装
+    std::string okra_dir = "/tmp/test_okra_pkg";
+    fs::remove_all(okra_dir);
+    fs::create_directories(okra_dir + "/files/usr/bin");
+
+    std::ofstream ofs_okra_meta(okra_dir + "/meta.yaml");
+    ofs_okra_meta << "name: okratool\n"
+                  << "namespace: okrapm\n"
+                  << "version: 2.1.0\n"
+                  << "desc: \"Legacy okpm tool test\"\n"
+                  << "deps:\n"
+                  << "  - core.base\n"
+                  << "arch: x86_64\n";
+    ofs_okra_meta.close();
+
+    std::ofstream ofs_okra_bin(okra_dir + "/files/usr/bin/okratool");
+    ofs_okra_bin << "#!/bin/sh\necho okra\n";
+    ofs_okra_bin.close();
+
+    ArtifactOptions okra_opts;
+    okra_opts.output_path = "/tmp/okratool-2.1.0.okra";
+    auto built_okra = ArtifactBuilder::build(okra_dir, okra_opts);
+    assert(built_okra.has_value());
+    assert(fs::exists(*built_okra));
+
+    auto okra_meta = ArtifactExtractor::inspect(*built_okra);
+    assert(okra_meta.has_value());
+    assert(okra_meta->name == "okratool");
+    assert(okra_meta->ns == "okrapm");
+    assert(okra_meta->version.to_string() == "2.1.0");
+    assert(okra_meta->description == "Legacy okpm tool test");
+    assert(okra_meta->dependencies.size() == 1 && okra_meta->dependencies[0] == "core.base");
+
+    std::string okra_core_dir = "/tmp/lunar_okra_core_test";
+    fs::remove_all(okra_core_dir);
+    LunarCore okra_core(okra_core_dir);
+
+    // 验证 okrapm 后端扩展已自动加载
+    assert(ExtensionApi::instance().get_extension("okrapm").has_value());
+
+    auto inst_okra_res = okra_core.install({*built_okra});
+    assert(inst_okra_res.success);
+    auto inst_okra_obj = okra_core.info("okrapm.okratool");
+    assert(inst_okra_obj.has_value());
+    assert(inst_okra_obj->name() == "okratool");
+    assert(inst_okra_obj->version().to_string() == "2.1.0");
+
+    fs::remove_all(okra_dir);
+    fs::remove(*built_okra);
+    fs::remove_all(okra_core_dir);
+
     // 清理
     fs::remove_all(test_dir);
     fs::remove_all(extract_dir);

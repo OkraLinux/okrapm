@@ -98,8 +98,8 @@ std::optional<ArtifactMetadata> ArtifactMetadata::parse_yaml(const std::string& 
             val = val.substr(1, val.size() - 2);
         }
 
-        if (key == "dependencies" || key == "files") {
-            current_list_key = key;
+        if (key == "dependencies" || key == "deps" || key == "files") {
+            current_list_key = (key == "deps") ? "dependencies" : key;
             continue;
         } else {
             current_list_key = "";
@@ -112,7 +112,7 @@ std::optional<ArtifactMetadata> ArtifactMetadata::parse_yaml(const std::string& 
         } else if (key == "version") {
             auto v = Version::parse(val);
             if (v) meta.version = *v;
-        } else if (key == "description") {
+        } else if (key == "description" || key == "desc") {
             meta.description = val;
         } else if (key == "architecture" || key == "arch") {
             meta.architecture = val;

@@ -40,6 +40,16 @@ bool SystemStore::load() {
         auto obj = Object::deserialize(line);
         if (obj) {
             installed_.push_back(*obj);
+        } else {
+            // 兼容 okpm 格式行: name version path
+            std::istringstream iss(line);
+            std::string name, ver_str, path;
+            if (iss >> name >> ver_str >> path) {
+                auto ver = Version::parse(ver_str);
+                Object okpm_obj("okra", name, ver ? *ver : Version(1, 0, 0), ObjectType::Package);
+                okpm_obj.set_repository("okpm-legacy");
+                installed_.push_back(okpm_obj);
+            }
         }
     }
     return true;

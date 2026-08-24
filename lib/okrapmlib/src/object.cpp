@@ -145,11 +145,15 @@ Artifact::Artifact(std::string path)
     // deduce name from file path
     auto slash = artifact_path_.rfind('/');
     std::string filename = (slash == std::string::npos) ? artifact_path_ : artifact_path_.substr(slash + 1);
-    auto dot = filename.rfind(".oaa");
-    if (dot != std::string::npos) {
-        name_ = filename.substr(0, dot);
+    if (filename.size() > 5 && filename.substr(filename.size() - 5) == ".okra") {
+        name_ = filename.substr(0, filename.size() - 5);
     } else {
-        name_ = filename;
+        auto dot = filename.rfind(".oaa");
+        if (dot != std::string::npos) {
+            name_ = filename.substr(0, dot);
+        } else {
+            name_ = filename;
+        }
     }
 }
 

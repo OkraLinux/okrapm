@@ -9,14 +9,19 @@ std::optional<ObjectRef> ObjectRef::parse(const std::string& str) {
     ObjectRef ref;
     std::string input = str;
 
-    // Check for artifact path (.oaa or starts with ./)
-    if (input.size() > 4 && input.substr(input.size() - 4) == ".oaa") {
+    // Check for artifact path (.oaa or .okra or starts with ./)
+    if ((input.size() > 4 && input.substr(input.size() - 4) == ".oaa") ||
+        (input.size() > 5 && input.substr(input.size() - 5) == ".okra")) {
         ref.type_ = ObjectType::Artifact;
         ref.artifact_path_ = input;
         auto slash = input.rfind('/');
         std::string fname = (slash == std::string::npos) ? input : input.substr(slash + 1);
         ref.ns_ = "local";
-        ref.name_ = fname.substr(0, fname.size() - 4);
+        if (fname.size() > 5 && fname.substr(fname.size() - 5) == ".okra") {
+            ref.name_ = fname.substr(0, fname.size() - 5);
+        } else {
+            ref.name_ = fname.substr(0, fname.size() - 4);
+        }
         return ref;
     }
 
