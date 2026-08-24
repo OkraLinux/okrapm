@@ -1,0 +1,59 @@
+#!/bin/sh
+# oaa-verify - Verify integrity of a .oaa artifact
+# Usage: oaa-verify <file.oaa>
+
+OAA_LIB="$(dirname "$0")/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+[ $# -ge 1 ] || oaa_die "Usage: oaa-verify <file.oaa>"
+oaa_file="$1"
+[ -f "$oaa_file" ] || oaa_die "File not found: $oaa_file"
+
+oaa_title "Verifying: $oaa_file"
+
+# Step 1: SHA256 sidecar
+if [ -f "$oaa_file.sha256" ]; then
+    rec_sum="$(awk '{print $1}' "$oaa_file.sha256")"
+    cur_sum="$(oaa_sha256sum "$oaa_file")"
+    if [ "$rec_sum" = "$cur_sum" ]; then
+        oaa_info "SHA256 (sidecar): OK  $cur_sum"
+    else
+        oaa_error "SHA256 (sidecar): MISMATCH"
+        oaa_error "  recorded: $rec_sum"
+        oaa_error "  actual:   $cur_sum"
+        exit 1
+    fi
+else
+    oaa_warn "No .sha256 sidecar found; computing current hash:"
+    printf '  %s\n' "$(oaa_sha256sum "$oaa_file")"
+fi
+
+# Step 2: Embedded checksum field in meta.yaml
+meta_content="$(oaa_extract_meta "$oaa_file")"
+if [ -n "$meta_content" ]; then
+    embedded_sum="$(oaa_get_meta_field "$meta_content" checksum)"
+    if [ -n "$embedded_sum" ]; then
+        cur_sum="$(oaa_sha256sum "$oaa_file")"
+        if [ "$embedded_sum" = "$cur_sum" ]; then
+            oaa_info "SHA256 (meta):    OK  $cur_sum"
+        else
+            oaa_warn "SHA256 (meta):    MISMATCH (expected=$embedded_sum actual=$cur_sum)"
+        fi
+    fi
+fi
+
+# Step 3: tar integrity test
+oaa_info "Tar archive integrity test:"
+for attempt in \
+    "tar --zstd -tf \"$oaa_file\" >/dev/null 2>&1" \
+    "tar -xz -tf \"$oaa_file\" >/dev/null 2>&1" \
+    "tar -xJ -tf \"$oaa_file\" >/dev/null 2>&1" \
+    "tar -tf \"$oaa_file\" >/dev/null 2>&1"; do
+    if eval "$attempt"; then
+        oaa_info "  archive readable"
+        exit 0
+    fi
+done
+oaa_error "  archive is corrupt or uses unsupported compression"
+exit 1

@@ -1,0 +1,103 @@
+#!/bin/sh
+# oaa-new - Scaffold a new OAA package source directory
+# Usage: oaa-new <package-dir> [--name NAME] [--namespace NS] [--version VER]
+
+OAA_LIB="$(dirname "$0")/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+pkg_dir=""
+name=""
+namespace="app"
+version="1.0.0"
+description="Okra Application Package"
+arch="x86_64"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name)      name="$2";      shift 2 ;;
+        --namespace) namespace="$2"; shift 2 ;;
+        --version)   version="$2";   shift 2 ;;
+        --desc)      description="$2"; shift 2 ;;
+        --arch)      arch="$2";      shift 2 ;;
+        --help|-h) cat <<EOF
+Usage: oaa-new <package-dir> [options]
+  --name NAME       Package name (default: dir basename)
+  --namespace NS    Namespace (default: app)
+  --version VER     Version (default: 1.0.0)
+  --desc TEXT       Description
+  --arch ARCH       Architecture (default: x86_64)
+EOF
+            exit 0 ;;
+        *) pkg_dir="$1"; shift ;;
+    esac
+done
+
+[ -n "$pkg_dir" ] || oaa_die "Usage: oaa-new <package-dir> [options]"
+if [ -e "$pkg_dir" ]; then
+    oaa_die "Path already exists: $pkg_dir"
+fi
+
+[ -z "$name" ] && name="$(basename "$pkg_dir")"
+
+mkdir -p "$pkg_dir/rootfs/usr/bin" \
+         "$pkg_dir/rootfs/usr/lib" \
+         "$pkg_dir/rootfs/etc" \
+         "$pkg_dir/scripts"
+
+cat > "$pkg_dir/meta.yaml" <<EOF
+name: $name
+namespace: $namespace
+version: $version
+description: "$description"
+architecture: $arch
+maintainer: "OkraLinux Maintainer <maintainer@okralinux.cn>"
+installed_size: 0
+dependencies: []
+files:
+  - /usr/bin/$name
+EOF
+
+cat > "$pkg_dir/scripts/pre-build" <<'EOF'
+#!/bin/sh
+echo "[pre-build] preparing $name $version"
+EOF
+chmod +x "$pkg_dir/scripts/pre-build"
+
+cat > "$pkg_dir/scripts/post-build" <<'EOF'
+#!/bin/sh
+echo "[post-build] artifact packaged"
+EOF
+chmod +x "$pkg_dir/scripts/post-build"
+
+cat > "$pkg_dir/scripts/pre-install" <<'EOF'
+#!/bin/sh
+echo "[pre-install] about to install"
+EOF
+chmod +x "$pkg_dir/scripts/pre-install"
+
+cat > "$pkg_dir/scripts/post-install" <<'EOF'
+#!/bin/sh
+echo "[post-install] install complete"
+EOF
+chmod +x "$pkg_dir/scripts/post-install"
+
+cat > "$pkg_dir/rootfs/usr/bin/$name" <<EOF
+#!/bin/sh
+echo "$name $version - installed via OkraPM OAA"
+EOF
+chmod +x "$pkg_dir/rootfs/usr/bin/$name"
+
+cat > "$pkg_dir/.oaaignore" <<'EOF'
+*.oaa
+*.oaa.sig
+.git/
+EOF
+
+oaa_info "Scaffolded OAA package skeleton at: $pkg_dir"
+oaa_title "Layout:"
+( cd "$pkg_dir" && find . -type f | sort | sed 's/^\.\//  /' )
+oaa_title "Next steps:"
+printf '  1. Edit %s/meta.yaml\n' "$pkg_dir"
+printf '  2. Place payload files under %s/rootfs/\n' "$pkg_dir"
+printf '  3. Run: oaa-build %s\n' "$pkg_dir"

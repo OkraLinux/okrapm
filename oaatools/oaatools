@@ -1,0 +1,55 @@
+#!/bin/sh
+# oaatools - Main dispatcher for OAA toolkit
+# Usage: oaatools <command> [args...]
+#         (also installable as /usr/bin/oaa)
+
+OAA_TOOLS_DIR="$(dirname "$0")"
+OAA_LIB="$OAA_TOOLS_DIR/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+print_usage() {
+    cat <<'EOF'
+Oaatools - OAA (Okra Application Artifact) Toolkit
+
+Usage: oaatools <command> [args...]
+
+Commands:
+  Package Lifecycle:
+    new <dir> [opts]         Create a new OAA package skeleton directory
+    build <dir> [-o out]     Build a .oaa artifact from a source directory
+    verify <file.oaa>        Verify integrity (SHA256 + tar test)
+
+  Inspection & Extraction:
+    inspect <file.oaa>       Display metadata of an artifact
+    list <file.oaa> [-l]     List files inside an artifact
+    extract <f> <dest>       Extract artifact to a destination directory
+
+  Utilities:
+    sha256 <file>            Print SHA256 hash of any file
+    version                  Print oaatools version
+    help                     Show this help
+
+Environment:
+  OAA_TOOLS_DIR   Override the tools directory (default: script location)
+EOF
+}
+
+cmd="${1:-help}"
+[ $# -ge 1 ] && shift
+
+case "$cmd" in
+    new)      exec "$OAA_TOOLS_DIR/oaa-new" "$@" ;;
+    build)    exec "$OAA_TOOLS_DIR/oaa-build" "$@" ;;
+    inspect)  exec "$OAA_TOOLS_DIR/oaa-inspect" "$@" ;;
+    extract)  exec "$OAA_TOOLS_DIR/oaa-extract" "$@" ;;
+    list)     exec "$OAA_TOOLS_DIR/oaa-list" "$@" ;;
+    verify)   exec "$OAA_TOOLS_DIR/oaa-verify" "$@" ;;
+    sha256)
+        [ $# -ge 1 ] || oaa_die "Usage: oaatools sha256 <file>"
+        oaa_sha256sum "$1"
+        ;;
+    version)  echo "oaatools 1.0.0 (Okra Rolling Linux)" ;;
+    help|-h|--help) print_usage ;;
+    *) oaa_error "Unknown command: $cmd"; print_usage; exit 1 ;;
+esac

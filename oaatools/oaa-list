@@ -1,0 +1,47 @@
+#!/bin/sh
+# oaa-list - List the contents of a .oaa artifact
+# Usage: oaa-list <file.oaa> [-l]
+
+OAA_LIB="$(dirname "$0")/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+long=0
+oaa_file=""
+for arg in "$@"; do
+    case "$arg" in
+        -l|--long) long=1 ;;
+        --help|-h) echo "Usage: oaa-list <file.oaa> [-l]"; exit 0 ;;
+        *) oaa_file="$arg" ;;
+    esac
+done
+
+[ -n "$oaa_file" ] || oaa_die "Usage: oaa-list <file.oaa> [-l]"
+[ -f "$oaa_file" ] || oaa_die "File not found: $oaa_file"
+
+listed=0
+if [ "$long" -eq 1 ]; then
+    for attempt in \
+        "tar --zstd -tvf \"$oaa_file\"" \
+        "tar -xz -tvf \"$oaa_file\"" \
+        "tar -xJ -tvf \"$oaa_file\"" \
+        "tar -tvf \"$oaa_file\""; do
+        if eval "$attempt" 2>/dev/null | head -n 200; then
+            listed=1
+            break
+        fi
+    done
+else
+    for attempt in \
+        "tar --zstd -tf \"$oaa_file\"" \
+        "tar -xz -tf \"$oaa_file\"" \
+        "tar -xJ -tf \"$oaa_file\"" \
+        "tar -tf \"$oaa_file\""; do
+        if eval "$attempt" 2>/dev/null | head -n 200; then
+            listed=1
+            break
+        fi
+    done
+fi
+
+[ "$listed" -eq 1 ] || oaa_die "Listing failed for all known compression formats"

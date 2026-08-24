@@ -1,0 +1,63 @@
+#!/bin/sh
+# oaa-inspect - Inspect metadata of a .oaa artifact
+# Usage: oaa-inspect <file.oaa>
+
+OAA_LIB="$(dirname "$0")/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+[ $# -ge 1 ] || oaa_die "Usage: oaa-inspect <file.oaa>"
+oaa_file="$1"
+[ -f "$oaa_file" ] || oaa_die "File not found: $oaa_file"
+
+meta_content="$(oaa_extract_meta "$oaa_file")"
+[ -n "$meta_content" ] || oaa_die "Failed to read meta.yaml from $oaa_file"
+
+name="$(oaa_get_meta_field "$meta_content" name)"
+ns="$(oaa_get_meta_field "$meta_content" namespace)"
+ver="$(oaa_get_meta_field "$meta_content" version)"
+arch="$(oaa_get_meta_field "$meta_content" architecture)"
+desc="$(oaa_get_meta_field "$meta_content" description)"
+maint="$(oaa_get_meta_field "$meta_content" maintainer)"
+isize="$(oaa_get_meta_field "$meta_content" installed_size)"
+
+oaa_title "OAA Artifact Metadata"
+printf '  Path:          %s\n' "$oaa_file"
+printf '  Namespace:     %s\n' "${ns:-app}"
+printf '  Name:          %s\n' "$name"
+printf '  Version:       %s\n' "$ver"
+printf '  Architecture:  %s\n' "${arch:-x86_64}"
+printf '  Description:   %s\n' "$desc"
+printf '  Maintainer:    %s\n' "$maint"
+printf '  Installed Sz:  %s\n' "$(oaa_human_size "${isize:-0}")"
+
+# File size on disk
+disk_size="$(wc -c < "$oaa_file")"
+printf '  Artifact Size: %s\n' "$(oaa_human_size "$disk_size")"
+
+# Recorded checksum (from sidecar if present)
+if [ -f "$oaa_file.sha256" ]; then
+    rec_sum="$(awk '{print $1}' "$oaa_file.sha256")"
+    cur_sum="$(oaa_sha256sum "$oaa_file")"
+    if [ "$rec_sum" = "$cur_sum" ]; then
+        printf '  SHA256:        %s (verified)\n' "$cur_sum"
+    else
+        oaa_warn "SHA256 mismatch: recorded=$rec_sum actual=$cur_sum"
+    fi
+else
+    printf '  SHA256:        %s (no sidecar)\n' "$(oaa_sha256sum "$oaa_file")"
+fi
+
+# Dependencies list
+deps="$(oaa_get_meta_list "$meta_content" dependencies)"
+if [ -n "$deps" ]; then
+    oaa_title "Dependencies:"
+    printf '%s\n' "$deps" | sed 's/^/  - /'
+fi
+
+# Files manifest
+files="$(oaa_get_meta_list "$meta_content" files)"
+if [ -n "$files" ]; then
+    oaa_title "Manifest:"
+    printf '%s\n' "$files" | sed 's/^/  - /'
+fi

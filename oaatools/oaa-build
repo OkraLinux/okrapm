@@ -1,0 +1,90 @@
+#!/bin/sh
+# oaa-build - Build a .oaa artifact from a source directory
+# Usage: oaa-build <src-dir> [output.oaa]
+
+OAA_LIB="$(dirname "$0")/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+src_dir=""
+output_path=""
+verbose=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o|--output) output_path="$2"; shift 2 ;;
+        -v|--verbose) verbose=1; shift ;;
+        --help|-h) cat <<EOF
+Usage: oaa-build <src-dir> [-o output.oaa] [-v]
+EOF
+            exit 0 ;;
+        *) src_dir="$1"; shift ;;
+    esac
+done
+
+[ -n "$src_dir" ] || oaa_die "Usage: oaa-build <src-dir> [options]"
+[ -d "$src_dir" ] || oaa_die "Source directory not found: $src_dir"
+
+meta_file=""
+for cand in meta.yaml meta.json; do
+    if [ -f "$src_dir/$cand" ]; then
+        meta_file="$src_dir/$cand"; break
+    fi
+done
+[ -n "$meta_file" ] || oaa_die "meta.yaml not found in $src_dir"
+
+[ "$(basename "$meta_file")" = "meta.yaml" ] || oaa_warn "meta.json detected; full features only available with meta.yaml."
+
+meta_content="$(cat "$meta_file")"
+pkg_name="$(oaa_get_meta_field "$meta_content" name)"
+pkg_ver="$(oaa_get_meta_field "$meta_content" version)"
+[ -n "$pkg_name" ] || oaa_die "meta.yaml: missing 'name' field"
+[ -n "$pkg_ver" ]  || oaa_die "meta.yaml: missing 'version' field"
+
+[ -z "$output_path" ] && output_path="${pkg_name}-${pkg_ver}.oaa"
+
+# Pre-build hook
+if [ -x "$src_dir/scripts/pre-build" ]; then
+    oaa_info "Running pre-build hook..."
+    ( cd "$src_dir" && ./scripts/pre-build ) || oaa_warn "pre-build returned non-zero"
+fi
+
+# Choose compression: prefer zstd, fallback to gzip
+comp_flag=""
+if tar --help 2>&1 | grep -q -- '--zstd'; then
+    comp_flag="--zstd"
+else
+    comp_flag="-z"
+fi
+oaa_info "Compressing with: $comp_flag"
+
+# Build a clean tarball (excluding .oaa outputs and .git)
+tar_cmd="tar $comp_flag -cf \"$output_path\" \
+    --exclude=./$(basename "$output_path") \
+    --exclude=./$(basename "$output_path" .oaa).oaa.sig \
+    --exclude=.git \
+    -C \"$src_dir\" ."
+
+if [ "$verbose" -eq 1 ]; then
+    oaa_title "Tar command: $tar_cmd"
+fi
+
+if ! eval "$tar_cmd"; then
+    oaa_die "archive generation failed"
+fi
+
+[ -f "$output_path" ] || oaa_die "archive generation produced no file"
+
+# Inject / refresh checksum into a sidecar file (.oaa.sha256)
+sha256="$(oaa_sha256sum "$output_path")" || oaa_die "cannot compute SHA256"
+echo "$sha256  $(basename "$output_path")" > "$output_path.sha256"
+
+# Post-build hook
+if [ -x "$src_dir/scripts/post-build" ]; then
+    oaa_info "Running post-build hook..."
+    ( cd "$src_dir" && ./scripts/post-build ) || oaa_warn "post-build returned non-zero"
+fi
+
+size_human="$(oaa_human_size "$(wc -c < "$output_path")")"
+oaa_info "Artifact built: $output_path ($size_human)"
+oaa_title "SHA256: $sha256"

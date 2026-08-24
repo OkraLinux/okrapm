@@ -1,0 +1,18 @@
+name: nano
+namespace: app-editors
+version: 8.4
+description: "Small and friendly text editor for OkraLinux"
+architecture: x86_64
+maintainer: "OkraLinux Team <maintainer@okralinux.cn>"
+installed_size: 600000
+dependencies:
+  - glibc
+  - ncurses
+  - libmagic
+  - zlib
+files:
+  - /usr/bin/nano
+  - /lib64/libmagic.so.1
+  - /lib64/libncursesw.so.6
+  - /lib64/libtinfo.so.6
+  - /lib64/libz.so.1

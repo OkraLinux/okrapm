@@ -1,0 +1,13 @@
+name: fastfetch
+namespace: app-shell
+version: 2.52.0
+description: "System information tool for OkraLinux"
+architecture: x86_64
+maintainer: "OkraLinux Team <maintainer@okralinux.cn>"
+installed_size: 2000000
+dependencies:
+  - glibc
+  - libyyjson
+files:
+  - /usr/bin/fastfetch
+  - /lib64/libyyjson.so.0

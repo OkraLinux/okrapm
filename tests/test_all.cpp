@@ -227,7 +227,7 @@ void test_artifact_engine() {
     ofs_okra_bin << "#!/bin/sh\necho okra\n";
     ofs_okra_bin.close();
 
-    ArtifactOptions okra_opts;
+    ArtifactBuilder::BuildOptions okra_opts;
     okra_opts.output_path = "/tmp/okratool-2.1.0.okra";
     auto built_okra = ArtifactBuilder::build(okra_dir, okra_opts);
     assert(built_okra.has_value());
@@ -246,9 +246,17 @@ void test_artifact_engine() {
     LunarCore okra_core(okra_core_dir);
 
     // 验证 okrapm 后端扩展已自动加载
-    assert(ExtensionApi::instance().get_extension("okrapm").has_value());
+    bool has_okrapm_ext = false;
+    for (const auto& item : ExtensionApi::instance().list_extensions()) {
+        if (item.name == "okrapm") {
+            has_okrapm_ext = true;
+            break;
+        }
+    }
+    assert(has_okrapm_ext);
 
-    auto inst_okra_res = okra_core.install({*built_okra});
+    std::vector<std::string> install_targets = {*built_okra};
+    auto inst_okra_res = okra_core.install(install_targets);
     assert(inst_okra_res.success);
     auto inst_okra_obj = okra_core.info("okrapm.okratool");
     assert(inst_okra_obj.has_value());

@@ -1,0 +1,46 @@
+#!/bin/sh
+# oaa-extract - Extract a .oaa artifact to a target directory
+# Usage: oaa-extract <file.oaa> <dest-dir>
+
+OAA_LIB="$(dirname "$0")/oaatools-common.sh"
+[ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
+. "$OAA_LIB"
+
+[ $# -ge 2 ] || oaa_die "Usage: oaa-extract <file.oaa> <dest-dir>"
+oaa_file="$1"
+dest_dir="$2"
+
+[ -f "$oaa_file" ] || oaa_die "File not found: $oaa_file"
+mkdir -p "$dest_dir" || oaa_die "Cannot create destination: $dest_dir"
+
+# Verify integrity if sidecar exists
+if [ -f "$oaa_file.sha256" ]; then
+    rec_sum="$(awk '{print $1}' "$oaa_file.sha256")"
+    cur_sum="$(oaa_sha256sum "$oaa_file")"
+    [ "$rec_sum" = "$cur_sum" ] || oaa_die "checksum verification failed; aborting extraction"
+    oaa_info "Integrity verified."
+fi
+
+# Try multiple tar invocations (zstd -> gzip -> plain)
+extracted=0
+for attempt in \
+    "tar --zstd -xf \"$oaa_file\" -C \"$dest_dir\"" \
+    "tar -xz -xf \"$oaa_file\" -C \"$dest_dir\"" \
+    "tar -xJ -xf \"$oaa_file\" -C \"$dest_dir\"" \
+    "tar -xf \"$oaa_file\" -C \"$dest_dir\""; do
+    if eval "$attempt" 2>/dev/null; then
+        extracted=1
+        break
+    fi
+done
+
+[ "$extracted" -eq 1 ] || oaa_die "Extraction failed for all known compression formats"
+
+count=$(find "$dest_dir" -type f | wc -l)
+oaa_info "Extraction complete: $count files into $dest_dir"
+
+# Run post-install hook if present
+if [ -x "$dest_dir/scripts/post-install" ]; then
+    oaa_info "Executing post-install hook..."
+    ( cd "$dest_dir" && ./scripts/post-install ) || oaa_warn "post-install returned non-zero"
+fi
