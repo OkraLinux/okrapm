@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstdlib>
+#include <fstream>
 #include "okrapmlib/lunar_core.h"
 #include "okrapmlib/artifact_engine.h"
 #include "okrapmlib/pipeline_engine.h"
@@ -43,6 +44,7 @@ void print_help() {
               << "Artifact & Packaging (.oaa / .okra):\n"
               << "  build <dir> [out_file]    Build an artifact package from directory\n"
               << "  artifact inspect <file>   Inspect metadata and files in artifact\n"
+              << "  artifact verify <file>   Verify package checksum and archive integrity\n"
               << "  artifact extract <f> <d>  Extract artifact archive to destination directory\n"
               << "\n"
               << "Query & Inspection:\n"
@@ -171,6 +173,32 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // ---- Artifact Verification (verify) ----
+    if (command == "verify") {
+        if (raw_args.size() < 2) {
+            std::cerr << "Usage: lunar verify <file.oaa>\n";
+            return 1;
+        }
+        const std::string& file = raw_args[1];
+        auto meta = ArtifactExtractor::inspect(file);
+        if (!meta) {
+            std::cerr << "Error: Failed to verify artifact " << file << "\n";
+            return 1;
+        }
+        std::ifstream sidecar(file + ".sha256");
+        if (sidecar) {
+            std::string expected;
+            sidecar >> expected;
+            if (expected.empty() || expected != ArtifactExtractor::calculate_sha256(file)) {
+                std::cerr << "Error: SHA256 verification failed: " << file << "\n";
+                return 1;
+            }
+        }
+        std::cout << ":: " << file << " is VALID (SHA256 "
+                  << ArtifactExtractor::calculate_sha256(file) << ").\n";
+        return 0;
+    }
+
     // ---- Artifact Sub-commands (artifact) ----
     if (command == "artifact") {
         if (raw_args.size() < 2) {
@@ -178,7 +206,29 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         std::string sub = raw_args[1];
-        if (sub == "inspect" && raw_args.size() >= 3) {
+        if (sub == "verify" && raw_args.size() >= 3) {
+            std::string file = raw_args[2];
+            auto meta = ArtifactExtractor::inspect(file);
+            if (!meta) {
+                std::cerr << "Error: Artifact verification failed: " << file << "\n";
+                return 1;
+            }
+            std::ifstream sidecar(file + ".sha256");
+            if (sidecar) {
+                std::string expected;
+                sidecar >> expected;
+                if (expected.empty() || expected != ArtifactExtractor::calculate_sha256(file)) {
+                    std::cerr << "Error: Artifact SHA256 verification failed: " << file << "\n";
+                    return 1;
+                }
+            }
+            if (!meta->checksum.empty() && meta->checksum != ArtifactExtractor::calculate_sha256(file)) {
+                std::cerr << "Error: Embedded artifact SHA256 verification failed: " << file << "\n";
+                return 1;
+            }
+            std::cout << ":: " << file << " is VALID (SHA256 " << ArtifactExtractor::calculate_sha256(file) << ").\n";
+            return 0;
+        } else if (sub == "inspect" && raw_args.size() >= 3) {
             std::string file = raw_args[2];
             auto meta = ArtifactExtractor::inspect(file);
             if (!meta) {

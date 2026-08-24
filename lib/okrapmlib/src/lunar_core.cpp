@@ -3,8 +3,59 @@
 #include <filesystem>
 #include <iostream>
 #include <sstream>
+#include <fstream>
+#include <cstdlib>
 
 namespace fs = std::filesystem;
+
+namespace {
+std::string shell_sha256(const std::string& path) {
+    std::string cmd = "sha256sum \"" + path + "\" 2>/dev/null";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return {};
+    char buffer[128]{};
+    std::string out;
+    if (fgets(buffer, sizeof(buffer), pipe)) out = buffer;
+    pclose(pipe);
+    auto pos = out.find_first_of(" \\t");
+    return pos == std::string::npos ? out : out.substr(0, pos);
+}
+
+bool verify_sidecar(const std::string& path) {
+    std::ifstream sidecar(path + ".sha256");
+    if (!sidecar) return true;
+    std::string expected;
+    sidecar >> expected;
+    return !expected.empty() && expected == shell_sha256(path);
+}
+
+bool copy_payload(const fs::path& payload, const fs::path& root, std::vector<fs::path>& created) {
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(payload, ec)) {
+        if (ec) return false;
+        auto rel = fs::relative(entry.path(), payload, ec);
+        if (ec || rel.empty() || rel.string().find("..") == 0) return false;
+        auto dest = root / rel;
+        if (entry.is_directory()) {
+            fs::create_directories(dest, ec);
+            if (ec) return false;
+        } else if (entry.is_regular_file() || entry.is_symlink()) {
+            if (fs::exists(dest, ec)) return false;
+            fs::create_directories(dest.parent_path(), ec);
+            if (ec) return false;
+            fs::copy(entry.path(), dest, fs::copy_options::copy_symlinks, ec);
+            if (ec) return false;
+            created.push_back(dest);
+        }
+    }
+    return true;
+}
+
+void rollback_files(const std::vector<fs::path>& created) {
+    std::error_code ec;
+    for (auto it = created.rbegin(); it != created.rend(); ++it) fs::remove(*it, ec);
+}
+}
 
 namespace okrapm {
 
@@ -401,6 +452,7 @@ bool LunarCore::rollback(uint64_t snapshot_id) {
 }
 
 bool LunarCore::commit_transaction(Transaction& txn) {
+    std::vector<std::vector<fs::path>> installed_artifacts;
     txn.advance_state(TransactionState::Verified);
     extensions().trigger_hooks(HookType::PreTransaction, txn);
 
@@ -418,9 +470,31 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                 extensions().trigger_hooks(HookType::PreInstall, txn);
                 if (op.target().repository().rfind("local:", 0) == 0) {
                     std::string local_path = op.target().repository().substr(6);
-                    if (fs::exists(local_path)) {
-                        ArtifactExtractor::extract(local_path, "/");
+                    if (!fs::exists(local_path) || !verify_sidecar(local_path)) {
+                        txn.advance_state(TransactionState::Failed, "Local artifact SHA256 verification failed");
+                        txn.advance_state(TransactionState::RolledBack);
+                        return false;
                     }
+                    auto staging = fs::temp_directory_path() / ("lunar-install-" + std::to_string(txn.id()));
+                    std::vector<fs::path> created;
+                    bool extracted = ArtifactExtractor::extract(local_path, staging.string());
+                    fs::path payload = fs::exists(staging / "files") ? staging / "files" : staging / "rootfs";
+                    const char* configured_root = std::getenv("LUNAR_INSTALL_ROOT");
+                    fs::path install_root = configured_root ? configured_root : "/";
+                    if (!configured_root && fs::status(install_root).permissions() != fs::perms::unknown &&
+                        (fs::status(install_root).permissions() & fs::perms::owner_write) == fs::perms::none) {
+                        install_root = data_dir_ + "/rootfs";
+                    }
+                    if (!extracted || !fs::exists(payload) || !copy_payload(payload, install_root, created)) {
+                        rollback_files(created);
+                        for (const auto& prior : installed_artifacts) rollback_files(prior);
+                        fs::remove_all(staging);
+                        txn.advance_state(TransactionState::Failed, "Local artifact installation failed or file conflict detected");
+                        txn.advance_state(TransactionState::RolledBack);
+                        return false;
+                    }
+                    fs::remove_all(staging);
+                    installed_artifacts.push_back(std::move(created));
                 } else if (op.target().repository() == "local-artifact") {
                     // 本地 artifact 的归档路径由 install() 传入并保留在目标对象中
                 } else {

@@ -45,6 +45,10 @@ case "$cmd" in
     extract)  exec "$OAA_TOOLS_DIR/oaa-extract" "$@" ;;
     list)     exec "$OAA_TOOLS_DIR/oaa-list" "$@" ;;
     verify)   exec "$OAA_TOOLS_DIR/oaa-verify" "$@" ;;
+    install|remove)
+        LUNAR_BIN="${LUNAR_BIN:-lunar}"
+        exec "$LUNAR_BIN" "$cmd" "$@"
+        ;;
     sha256)
         [ $# -ge 1 ] || oaa_die "Usage: oaatools sha256 <file>"
         oaa_sha256sum "$1"

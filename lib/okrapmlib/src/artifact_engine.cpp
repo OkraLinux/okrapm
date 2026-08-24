@@ -261,17 +261,12 @@ bool ArtifactExtractor::extract(const std::string& archive_path,
 
     std::error_code ec;
     fs::create_directories(target_dir, ec);
-
     std::string v_flag = verbose ? "v" : "";
-    std::string cmd = "tar --zstd -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" --strip-components=1 2>/dev/null || "
-                      "tar -xz -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" --strip-components=2 2>/dev/null || "
-                      "tar -x -" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" --strip-components=2 2>/dev/null || "
-                      "tar --zstd -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" 2>/dev/null || "
+    std::string cmd = "tar --zstd -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" 2>/dev/null || "
                       "tar -xz -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" 2>/dev/null || "
+                      "tar -xJ -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" 2>/dev/null || "
                       "tar -x" + v_flag + "f \"" + archive_path + "\" -C \"" + target_dir + "\" 2>/dev/null";
-
-    int ret = std::system(cmd.c_str());
-    return (ret == 0);
+    return std::system(cmd.c_str()) == 0;
 }
 
 int ArtifactExtractor::execute_hook(const std::string& script_path,
