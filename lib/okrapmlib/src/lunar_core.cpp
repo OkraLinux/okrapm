@@ -29,7 +29,73 @@ bool verify_sidecar(const std::string& path) {
     return !expected.empty() && expected == shell_sha256(path);
 }
 
-bool copy_payload(const fs::path& payload, const fs::path& root, std::vector<fs::path>& created) {
+// UndoEntry: 一次文件写入的撤销记录
+// Backup 为空表示目标路径原本不存在，回滚时删除即可；
+// Backup 非空表示目标路径原本存在，内容已移到 Backup，回滚时必须还原。
+struct UndoEntry {
+	fs::path Target;
+	fs::path Backup;
+};
+
+// MovePath: 把 Source 移到 Destination，保留符号链接本身与权限
+// 同一文件系统内用 rename（原子操作）；跨设备时 rename 失败，退化为复制后删除。
+bool MovePath(const fs::path &Source, const fs::path &Destination)
+{
+	std::error_code Error;
+	fs::create_directories(Destination.parent_path(), Error);
+	if (Error)
+		return false;
+
+	fs::rename(Source, Destination, Error);
+	if (!Error)
+		return true;
+
+	Error.clear();
+	bool IsLink = fs::is_symlink(Source, Error);
+	if (Error)
+		return false;
+	if (IsLink) {
+		auto LinkTarget = fs::read_symlink(Source, Error);
+		if (Error)
+			return false;
+		fs::create_symlink(LinkTarget, Destination, Error);
+		if (Error)
+			return false;
+		Error.clear();
+		fs::remove(Source, Error);
+		return !Error;
+	}
+
+	Error.clear();
+	auto Permissions = fs::status(Source, Error).permissions();
+	if (Error)
+		return false;
+	fs::copy_file(Source, Destination, fs::copy_options::overwrite_existing, Error);
+	if (Error)
+		return false;
+	Error.clear();
+	fs::permissions(Destination, Permissions, Error);
+	Error.clear();
+	fs::remove(Source, Error);
+	return !Error;
+}
+
+// DiscardBackup: 丢弃一个备份区
+void DiscardBackup(const fs::path &BackupRoot)
+{
+	std::error_code Error;
+	fs::remove_all(BackupRoot, Error);
+}
+
+// DiscardAllBackups: 丢弃本事务的全部备份区
+void DiscardAllBackups(const std::vector<fs::path> &BackupRoots)
+{
+	for (const auto &BackupRoot : BackupRoots)
+		DiscardBackup(BackupRoot);
+}
+
+bool copy_payload(const fs::path& payload, const fs::path& root,
+                  const fs::path& backup_root, std::vector<UndoEntry>& undo) {
     std::error_code ec;
     fs::recursive_directory_iterator it(
         payload, fs::directory_options::skip_permission_denied, ec);
@@ -53,9 +119,21 @@ bool copy_payload(const fs::path& payload, const fs::path& root, std::vector<fs:
         }
         fs::create_directories(dest.parent_path(), ec);
         if (ec) return false;
-        if (fs::exists(dest, ec) || fs::is_symlink(dest)) {
-            fs::remove(dest, ec);
+
+        // 覆盖前先把原文件移到备份区，否则回滚只能删除，被覆盖的内容会永久丢失
+        ec.clear();
+        bool dest_exists = fs::exists(dest, ec);
+        ec.clear();
+        if (!dest_exists) dest_exists = fs::is_symlink(dest, ec);
+        ec.clear();
+        if (dest_exists) {
+            auto backup = backup_root / rel;
+            if (!MovePath(dest, backup)) return false;
+            undo.push_back(UndoEntry{dest, backup});
+        } else {
+            undo.push_back(UndoEntry{dest, {}});
         }
+
         if (entry.is_symlink()) {
             fs::create_symlink(fs::read_symlink(entry.path(), ec), dest, ec);
         } else if (entry.is_regular_file()) {
@@ -64,14 +142,24 @@ bool copy_payload(const fs::path& payload, const fs::path& root, std::vector<fs:
             continue;
         }
         if (ec) return false;
-        created.push_back(dest);
     }
     return true;
 }
 
-void rollback_files(const std::vector<fs::path>& created) {
+// 按写入的反序撤销：原本存在的还原备份，原本不存在的删除
+void rollback_files(const std::vector<UndoEntry>& undo) {
     std::error_code ec;
-    for (auto it = created.rbegin(); it != created.rend(); ++it) fs::remove(*it, ec);
+    for (auto it = undo.rbegin(); it != undo.rend(); ++it) {
+        if (!it->Backup.empty()) {
+            ec.clear();
+            fs::remove(it->Target, ec);
+            ec.clear();
+            MovePath(it->Backup, it->Target);
+        } else {
+            fs::remove(it->Target, ec);
+        }
+        ec.clear();
+    }
 }
 }
 
@@ -470,7 +558,8 @@ bool LunarCore::rollback(uint64_t snapshot_id) {
 }
 
 bool LunarCore::commit_transaction(Transaction& txn) {
-    std::vector<std::vector<fs::path>> installed_artifacts;
+    std::vector<std::vector<UndoEntry>> installed_artifacts;
+    std::vector<fs::path> backup_roots;
     txn.advance_state(TransactionState::Verified);
     extensions().trigger_hooks(HookType::PreTransaction, txn);
 
@@ -489,12 +578,14 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                 if (op.target().repository().rfind("local:", 0) == 0) {
                     std::string local_path = op.target().repository().substr(6);
                     if (!fs::exists(local_path) || !verify_sidecar(local_path)) {
+                        // 同事务先前已写入的包必须一并回滚
+                        for (const auto& prior : installed_artifacts) rollback_files(prior);
+                        DiscardAllBackups(backup_roots);
                         txn.advance_state(TransactionState::Failed, "Local artifact SHA256 verification failed");
                         txn.advance_state(TransactionState::RolledBack);
                         return false;
                     }
                     auto staging = fs::temp_directory_path() / ("lunar-install-" + std::to_string(txn.id()));
-                    std::vector<fs::path> created;
                     bool extracted = ArtifactExtractor::extract(local_path, staging.string());
                     fs::path payload = fs::exists(staging / "files") ? staging / "files" : staging / "rootfs";
                     const char* configured_root = std::getenv("LUNAR_INSTALL_ROOT");
@@ -503,16 +594,22 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                         (fs::status(install_root).permissions() & fs::perms::owner_write) == fs::perms::none) {
                         install_root = data_dir_ + "/rootfs";
                     }
-                    if (!extracted || !fs::exists(payload) || !copy_payload(payload, install_root, created)) {
-                        rollback_files(created);
+                    fs::path backup_root = install_root / ".lunar-backup" / std::to_string(txn.id());
+                    std::vector<UndoEntry> undo;
+                    if (!extracted || !fs::exists(payload) ||
+                        !copy_payload(payload, install_root, backup_root, undo)) {
+                        rollback_files(undo);
                         for (const auto& prior : installed_artifacts) rollback_files(prior);
+                        DiscardAllBackups(backup_roots);
+                        DiscardBackup(backup_root);
                         fs::remove_all(staging);
                         txn.advance_state(TransactionState::Failed, "Local artifact installation failed or file conflict detected");
                         txn.advance_state(TransactionState::RolledBack);
                         return false;
                     }
                     fs::remove_all(staging);
-                    installed_artifacts.push_back(std::move(created));
+                    backup_roots.push_back(backup_root);
+                    installed_artifacts.push_back(std::move(undo));
                 } else if (op.target().repository() == "local-artifact") {
                     // 本地 artifact 的归档路径由 install() 传入并保留在目标对象中
                 } else {
@@ -520,12 +617,14 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                     if (repo) {
                         auto art_path = repo->fetch_artifact(op.target());
                         if (!art_path || !fs::exists(*art_path)) {
+                            // 同事务先前已写入的包必须一并回滚
+                            for (const auto& prior : installed_artifacts) rollback_files(prior);
+                            DiscardAllBackups(backup_roots);
                             txn.advance_state(TransactionState::Failed, "Failed to fetch artifact for " + op.target().full_name());
                             txn.advance_state(TransactionState::RolledBack);
                             return false;
                         }
                         auto staging = fs::temp_directory_path() / ("lunar-install-" + std::to_string(txn.id()) + "-" + op.target().name());
-                        std::vector<fs::path> created;
                         bool extracted = ArtifactExtractor::extract(*art_path, staging.string());
                         fs::path payload = fs::exists(staging / "files") ? staging / "files" : staging / "rootfs";
                         const char* configured_root = std::getenv("LUNAR_INSTALL_ROOT");
@@ -534,16 +633,22 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                             (fs::status(install_root).permissions() & fs::perms::owner_write) == fs::perms::none) {
                             install_root = data_dir_ + "/rootfs";
                         }
-                        if (!extracted || !fs::exists(payload) || !copy_payload(payload, install_root, created)) {
-                            rollback_files(created);
+                        fs::path backup_root = install_root / ".lunar-backup" / std::to_string(txn.id());
+                        std::vector<UndoEntry> undo;
+                        if (!extracted || !fs::exists(payload) ||
+                            !copy_payload(payload, install_root, backup_root, undo)) {
+                            rollback_files(undo);
                             for (const auto& prior : installed_artifacts) rollback_files(prior);
+                            DiscardAllBackups(backup_roots);
+                            DiscardBackup(backup_root);
                             fs::remove_all(staging);
                             txn.advance_state(TransactionState::Failed, "Artifact installation failed or file conflict detected");
                             txn.advance_state(TransactionState::RolledBack);
                             return false;
                         }
                         fs::remove_all(staging);
-                        installed_artifacts.push_back(std::move(created));
+                        backup_roots.push_back(backup_root);
+                        installed_artifacts.push_back(std::move(undo));
                     }
                 }
                 system_store_->install(op.target());
@@ -560,6 +665,10 @@ bool LunarCore::commit_transaction(Transaction& txn) {
     }
 
     if (!system_store_->save()) {
+        // 文件已经落盘，但数据库没写成功。必须把文件一并回滚，
+        // 否则磁盘上是新版本、数据库是旧记录，两边对不上。
+        for (const auto& prior : installed_artifacts) rollback_files(prior);
+        DiscardAllBackups(backup_roots);
         txn.advance_state(TransactionState::Failed, "Failed to persist system store");
         txn.advance_state(TransactionState::RolledBack);
         return false;
@@ -567,6 +676,9 @@ bool LunarCore::commit_transaction(Transaction& txn) {
 
     system_store_->advance_state_id();
     txn.advance_state(TransactionState::Committed);
+
+    // 提交成功，备份区不再需要
+    DiscardAllBackups(backup_roots);
 
     extensions().trigger_hooks(HookType::PostTransaction, txn);
     record_transaction(txn);
