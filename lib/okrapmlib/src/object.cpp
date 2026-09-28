@@ -1,4 +1,5 @@
 #include "okrapmlib/object.h"
+#include "okrapmlib/dependency_serialization.h"
 #include <sstream>
 
 namespace okrapm {
@@ -54,18 +55,24 @@ std::string Object::serialize() const {
         << "desc=" << description_ << "\t"
         << "dsize=" << download_size_ << "\t"
         << "isize=" << installed_size_ << "\t";
-
     oss << "deps=";
     for (size_t i = 0; i < dependencies_.size(); ++i) {
         if (i > 0) oss << ",";
         oss << dependencies_[i];
     }
     oss << "\t";
-
     oss << "files=";
     for (size_t i = 0; i < files_.size(); ++i) {
         if (i > 0) oss << ",";
         oss << files_[i];
+    }
+    std::string dep_block = SerializeDependencies(StructuredDeps_);
+    std::string cap_block = SerializeDependencies(Capabilities_);
+    if (!dep_block.empty()) {
+        oss << "\n" << dep_block;
+    }
+    if (!cap_block.empty()) {
+        oss << "\n" << cap_block;
     }
     return oss.str();
 }
@@ -74,13 +81,11 @@ std::optional<Object> Object::deserialize(const std::string& data) {
     if (data.empty()) return std::nullopt;
     Object obj;
     bool has_name = false;
-
     auto process_kv = [&](const std::string& kv) {
         auto eq_pos = kv.find('=');
         if (eq_pos == std::string::npos) return;
         std::string key = kv.substr(0, eq_pos);
         std::string value = kv.substr(eq_pos + 1);
-
         if (key == "ns") {
             obj.ns_ = value;
         } else if (key == "name") {
@@ -121,7 +126,6 @@ std::optional<Object> Object::deserialize(const std::string& data) {
             }
         }
     };
-
     std::string token;
     for (char c : data) {
         if (c == '\t' || c == '\n' || c == '\r') {
@@ -134,15 +138,41 @@ std::optional<Object> Object::deserialize(const std::string& data) {
         }
     }
     if (!token.empty()) process_kv(token);
-
     if (!has_name) return std::nullopt;
-    if (obj.ns_.empty()) obj.ns_ = "okra"; // default namespace
+    if (obj.ns_.empty()) obj.ns_ = "okra";
+    std::vector<Dependency> AllDeps;
+    if (ParseDependencies(data, AllDeps) == 0) {
+        std::vector<Dependency> StructuredOnly;
+        std::vector<Dependency> CapsOnly;
+        bool found_deps_header = false;
+        size_t pos = 0;
+        while (pos < data.size()) {
+            size_t eol = data.find('\n', pos);
+            std::string line = (eol == std::string::npos)
+                ? data.substr(pos)
+                : data.substr(pos, eol - pos);
+            if (line.find("@dependencies") == 0) {
+                found_deps_header = true;
+            }
+            pos = (eol == std::string::npos) ? data.size() : eol + 1;
+        }
+        if (found_deps_header) {
+            for (const auto& d : AllDeps) {
+                if (d.Kind == DependencyKind::Provides) {
+                    CapsOnly.push_back(d);
+                } else {
+                    StructuredOnly.push_back(d);
+                }
+            }
+            obj.StructuredDeps_ = std::move(StructuredOnly);
+            obj.Capabilities_ = std::move(CapsOnly);
+        }
+    }
     return obj;
 }
 
 Artifact::Artifact(std::string path)
     : Object("local", "artifact", {}, ObjectType::Artifact), artifact_path_(std::move(path)) {
-    // deduce name from file path
     auto slash = artifact_path_.rfind('/');
     std::string filename = (slash == std::string::npos) ? artifact_path_ : artifact_path_.substr(slash + 1);
     if (filename.size() > 5 && filename.substr(filename.size() - 5) == ".okra") {
@@ -159,14 +189,13 @@ Artifact::Artifact(std::string path)
 
 std::string Artifact::serialize() const {
     std::string result = Object::serialize();
-    result += "path=" + artifact_path_ + "\n";
+    result += "\npath=" + artifact_path_;
     return result;
 }
 
 std::optional<Artifact> Artifact::deserialize(const std::string& data) {
     auto base_obj = Object::deserialize(data);
     if (!base_obj) return std::nullopt;
-
     Artifact art;
     art.ns_ = base_obj->ns();
     art.name_ = base_obj->name();
@@ -175,7 +204,8 @@ std::optional<Artifact> Artifact::deserialize(const std::string& data) {
     art.description_ = base_obj->description();
     art.dependencies_ = base_obj->dependencies();
     art.files_ = base_obj->files();
-
+    art.Capabilities_ = base_obj->Capabilities();
+    art.StructuredDeps_ = base_obj->StructuredDependencies();
     std::istringstream iss(data);
     std::string line;
     while (std::getline(iss, line)) {
