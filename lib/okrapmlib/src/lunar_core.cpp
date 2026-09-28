@@ -71,10 +71,17 @@ bool MovePath(const fs::path &Source, const fs::path &Destination)
 	if (Error)
 		return false;
 	fs::copy_file(Source, Destination, fs::copy_options::overwrite_existing, Error);
-	if (Error)
+	if (Error) {
+		// 复制都没成功，Source 是唯一的数据，不能删
 		return false;
+	}
 	Error.clear();
 	fs::permissions(Destination, Permissions, Error);
+	if (Error) {
+		// 权限没能复制过来，Destination 不是完整的副本，备份未建立完成，
+		// 此时删掉 Source 就会丢掉原始属性，所以保留 Source 并返回失败
+		return false;
+	}
 	Error.clear();
 	fs::remove(Source, Error);
 	return !Error;
@@ -147,23 +154,76 @@ bool copy_payload(const fs::path& payload, const fs::path& root,
 }
 
 // 按写入的反序撤销：原本存在的还原备份，原本不存在的删除
-void rollback_files(const std::vector<UndoEntry>& created) {
+// 返回 true 表示每一项都还原成功；返回 false 表示至少有一项没还原，
+// 对应的备份仍然留在磁盘上，调用方不能清理它
+bool rollback_files(const std::vector<UndoEntry>& created) {
     std::error_code ec;
+    bool complete = true;
     for (auto it = created.rbegin(); it != created.rend(); ++it) {
         if (!it->Backup.empty()) {
             ec.clear();
             fs::remove(it->Target, ec);
             ec.clear();
-            MovePath(it->Backup, it->Target);
+            if (!MovePath(it->Backup, it->Target)) {
+                complete = false;
+            }
         } else {
+            ec.clear();
             fs::remove(it->Target, ec);
+            if (ec) {
+                complete = false;
+            }
         }
         ec.clear();
     }
+    return complete;
 }
+
+// RollbackArtifacts: 逆序回滚本事务已经写进磁盘的全部包
+// @Artifacts: 每个包的撤销记录，调用方要先把当前失败包的记录也放进来
+// @BackupRoots: 各包的备份区。全部还原成功才清理，否则留在磁盘上供人工恢复
+// Return: 全部还原成功返回 true；有一项没还原返回 false，此时备份区保留
+bool RollbackArtifacts(const std::vector<std::vector<UndoEntry>> &Artifacts,
+                       const std::vector<fs::path> &BackupRoots)
+{
+	bool Complete = true;
+	for (auto Batch = Artifacts.rbegin(); Batch != Artifacts.rend(); ++Batch) {
+		if (!rollback_files(*Batch))
+			Complete = false;
+	}
+	if (Complete)
+		DiscardAllBackups(BackupRoots);
+	return Complete;
+}
+
 }
 
 namespace okrapm {
+
+namespace {
+
+// FailAndRollback: 记录失败原因，回滚已经写出的文件，并把事务推到正确的终态
+// @Txn: 当前事务。
+// @Reason: 失败原因。
+// @Artifacts: 已经写进磁盘的包的撤销记录。
+// @BackupRoots: 各包的备份区。
+// Return: 始终返回 false，方便调用方直接 return FailAndRollback(...)
+// 全部还原成功才推进到 RolledBack。回滚不完整时停在 Failed，
+// 否则状态会说谎——文件系统只恢复了一部分，备份也要留着供人工恢复。
+bool FailAndRollback(Transaction &Txn, const std::string &Reason,
+                     const std::vector<std::vector<UndoEntry>> &Artifacts,
+                     const std::vector<fs::path> &BackupRoots)
+{
+	if (!RollbackArtifacts(Artifacts, BackupRoots)) {
+		Txn.advance_state(TransactionState::Failed, Reason + " (rollback incomplete, backups kept)");
+		return false;
+	}
+	Txn.advance_state(TransactionState::Failed, Reason);
+	Txn.advance_state(TransactionState::RolledBack);
+	return false;
+}
+
+} // namespace
 
 LunarCore::LunarCore(const std::string& data_dir)
     : data_dir_(data_dir) {
@@ -582,11 +642,8 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                     std::string local_path = op.target().repository().substr(6);
                     if (!fs::exists(local_path) || !verify_sidecar(local_path)) {
                         // 同事务先前已写入的包必须一并回滚
-                        for (const auto& prior : installed_artifacts) rollback_files(prior);
-                        DiscardAllBackups(backup_roots);
-                        txn.advance_state(TransactionState::Failed, "Local artifact SHA256 verification failed");
-                        txn.advance_state(TransactionState::RolledBack);
-                        return false;
+                        return FailAndRollback(txn, "Local artifact SHA256 verification failed",
+                                               installed_artifacts, backup_roots);
                     }
                     auto staging = fs::temp_directory_path() / ("lunar-install-" + std::to_string(txn.id()));
                     bool extracted = ArtifactExtractor::extract(local_path, staging.string());
@@ -600,20 +657,18 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                     fs::path backup_root = install_root / ".lunar-backup" /
                         (std::to_string(txn.id()) + "-" + std::to_string(artifact_index));
                     ++artifact_index;
+                    backup_roots.push_back(backup_root);
                     std::vector<UndoEntry> created;
                     if (!extracted || !fs::exists(payload) ||
                         !copy_payload(payload, install_root, backup_root, created)) {
-                        rollback_files(created);
-                        for (const auto& prior : installed_artifacts) rollback_files(prior);
-                        DiscardAllBackups(backup_roots);
-                        DiscardBackup(backup_root);
+                        // 当前包可能只写了一半，它的记录也要参与回滚
+                        std::vector<std::vector<UndoEntry>> pending = installed_artifacts;
+                        pending.push_back(std::move(created));
                         fs::remove_all(staging);
-                        txn.advance_state(TransactionState::Failed, "Local artifact installation failed or file conflict detected");
-                        txn.advance_state(TransactionState::RolledBack);
-                        return false;
+                        return FailAndRollback(txn, "Local artifact installation failed or file conflict detected",
+                                               pending, backup_roots);
                     }
                     fs::remove_all(staging);
-                    backup_roots.push_back(backup_root);
                     installed_artifacts.push_back(std::move(created));
                 } else if (op.target().repository() == "local-artifact") {
                     // 本地 artifact 的归档路径由 install() 传入并保留在目标对象中
@@ -623,11 +678,8 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                         auto art_path = repo->fetch_artifact(op.target());
                         if (!art_path || !fs::exists(*art_path)) {
                             // 同事务先前已写入的包必须一并回滚
-                            for (const auto& prior : installed_artifacts) rollback_files(prior);
-                            DiscardAllBackups(backup_roots);
-                            txn.advance_state(TransactionState::Failed, "Failed to fetch artifact for " + op.target().full_name());
-                            txn.advance_state(TransactionState::RolledBack);
-                            return false;
+                            return FailAndRollback(txn, "Failed to fetch artifact for " + op.target().full_name(),
+                                                   installed_artifacts, backup_roots);
                         }
                         auto staging = fs::temp_directory_path() / ("lunar-install-" + std::to_string(txn.id()) + "-" + op.target().name());
                         bool extracted = ArtifactExtractor::extract(*art_path, staging.string());
@@ -641,20 +693,18 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                         fs::path backup_root = install_root / ".lunar-backup" /
                             (std::to_string(txn.id()) + "-" + std::to_string(artifact_index));
                         ++artifact_index;
+                        backup_roots.push_back(backup_root);
                         std::vector<UndoEntry> created;
                         if (!extracted || !fs::exists(payload) ||
                             !copy_payload(payload, install_root, backup_root, created)) {
-                            rollback_files(created);
-                            for (const auto& prior : installed_artifacts) rollback_files(prior);
-                            DiscardAllBackups(backup_roots);
-                            DiscardBackup(backup_root);
+                            // 当前包可能只写了一半，它的记录也要参与回滚
+                            std::vector<std::vector<UndoEntry>> pending = installed_artifacts;
+                            pending.push_back(std::move(created));
                             fs::remove_all(staging);
-                            txn.advance_state(TransactionState::Failed, "Artifact installation failed or file conflict detected");
-                            txn.advance_state(TransactionState::RolledBack);
-                            return false;
+                            return FailAndRollback(txn, "Artifact installation failed or file conflict detected",
+                                                   pending, backup_roots);
                         }
                         fs::remove_all(staging);
-                        backup_roots.push_back(backup_root);
                         installed_artifacts.push_back(std::move(created));
                     }
                 }
@@ -674,11 +724,8 @@ bool LunarCore::commit_transaction(Transaction& txn) {
     if (!system_store_->save()) {
         // 文件已经落盘，但数据库没写成功。必须把文件一并回滚，
         // 否则磁盘上是新版本、数据库是旧记录，两边对不上。
-        for (const auto& prior : installed_artifacts) rollback_files(prior);
-        DiscardAllBackups(backup_roots);
-        txn.advance_state(TransactionState::Failed, "Failed to persist system store");
-        txn.advance_state(TransactionState::RolledBack);
-        return false;
+        return FailAndRollback(txn, "Failed to persist system store",
+                               installed_artifacts, backup_roots);
     }
 
     system_store_->advance_state_id();

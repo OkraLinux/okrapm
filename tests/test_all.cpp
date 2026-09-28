@@ -494,6 +494,101 @@ void test_remote_repository_and_distribution() {
     std::cout << "[PASS] test_remote_repository_and_distribution\n";
 }
 
+// TestRollbackRestoresOverwrittenFile() - 覆盖已有文件后事务失败，原内容必须恢复。
+// 这是原来那个数据丢失缺陷的回归测试：包 A 覆盖掉安装根里已有的文件，
+// 包 B 的 sidecar 校验不过导致整个事务失败，此时 A 覆盖前的原内容要被还原回来。
+void TestRollbackRestoresOverwrittenFile() {
+	std::string Root = "/tmp/lunar_rollback_root";
+	std::string CoreDir = "/tmp/lunar_rollback_core";
+	std::string PkgA = "/tmp/lunar_rollback_pkg_a";
+	std::string PkgB = "/tmp/lunar_rollback_pkg_b";
+
+	fs::remove_all(Root);
+	fs::remove_all(CoreDir);
+	fs::remove_all(PkgA);
+	fs::remove_all(PkgB);
+
+	// 安装根里预先放一个文件，包 A 会覆盖它，这里是期望被还原的原内容
+	fs::create_directories(Root + "/usr/bin");
+	{
+		std::ofstream Original(Root + "/usr/bin/tool");
+		Original << "ORIGINAL";
+	}
+	assert(fs::exists(Root + "/usr/bin/tool"));
+
+	// 包 A：覆盖 usr/bin/tool
+	fs::create_directories(PkgA + "/files/usr/bin");
+	{
+		std::ofstream Meta(PkgA + "/meta.yaml");
+		Meta << "name: toola\n"
+		     << "namespace: demo\n"
+		     << "version: 1.0.0\n"
+		     << "files:\n"
+		     << "  - usr/bin/tool\n";
+	}
+	{
+		std::ofstream Payload(PkgA + "/files/usr/bin/tool");
+		Payload << "FROM_PACKAGE_A";
+	}
+
+	// 包 B：内容无关紧要，它靠错误的 sidecar 让事务失败
+	fs::create_directories(PkgB + "/files/usr/bin");
+	{
+		std::ofstream Meta(PkgB + "/meta.yaml");
+		Meta << "name: toolb\n"
+		     << "namespace: demo\n"
+		     << "version: 1.0.0\n"
+		     << "files:\n"
+		     << "  - usr/bin/toolb\n";
+	}
+	{
+		std::ofstream Payload(PkgB + "/files/usr/bin/toolb");
+		Payload << "FROM_PACKAGE_B";
+	}
+
+	ArtifactBuilder::BuildOptions OptsA;
+	OptsA.output_path = "/tmp/tool_a.oaa";
+	auto BuiltA = ArtifactBuilder::build(PkgA, OptsA);
+	assert(BuiltA.has_value() && fs::exists(*BuiltA));
+
+	ArtifactBuilder::BuildOptions OptsB;
+	OptsB.output_path = "/tmp/tool_b.oaa";
+	auto BuiltB = ArtifactBuilder::build(PkgB, OptsB);
+	assert(BuiltB.has_value() && fs::exists(*BuiltB));
+
+	// 给包 B 写一个错误的 sidecar，让安装它在校验阶段就失败
+	{
+		std::ofstream Sidecar(*BuiltB + ".sha256");
+		Sidecar << "0000000000000000000000000000000000000000000000000000000000000000";
+	}
+
+	// 把安装根指向临时目录，避免写到真正的 /
+	setenv("LUNAR_INSTALL_ROOT", Root.c_str(), 1);
+
+	LunarCore Core(CoreDir);
+	auto Result = Core.install({*BuiltA, *BuiltB});
+
+	// 事务必须失败
+	assert(!Result.success);
+
+	// 关键断言：被覆盖的文件要恢复到覆盖前的内容，而不是被删掉或留着新内容
+	assert(fs::exists(Root + "/usr/bin/tool"));
+	std::ifstream Restored(Root + "/usr/bin/tool");
+	std::string Content;
+	std::getline(Restored, Content);
+	assert(Content == "ORIGINAL");
+
+	unsetenv("LUNAR_INSTALL_ROOT");
+	fs::remove_all(Root);
+	fs::remove_all(CoreDir);
+	fs::remove_all(PkgA);
+	fs::remove_all(PkgB);
+	fs::remove(*BuiltA);
+	fs::remove(*BuiltB);
+	fs::remove(*BuiltB + ".sha256");
+	std::cout << "[PASS] test_rollback_restores_overwritten_file\n";
+}
+
 int main() {
     std::cout << "Running okrapm / lunar comprehensive test suite...\n";
     test_version();
@@ -505,6 +600,7 @@ int main() {
     test_pipeline_engine();
     test_network_downloader();
     test_remote_repository_and_distribution();
+    TestRollbackRestoresOverwrittenFile();
     std::cout << "All Lunar tests passed successfully (100%)!\n";
     return 0;
 }
