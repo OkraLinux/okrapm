@@ -545,6 +545,127 @@ void test_remote_repository_and_distribution() {
     std::cout << "[PASS] test_remote_repository_and_distribution\n";
 }
 
+// TestReverseRollbackRestoresOriginal() - 同一路径被连续覆盖后，逆序回滚要回到最初的内容。
+// 事务里 pkg1 先把 usr/bin/tool 从 A 覆盖成 B，pkg2 再覆盖成 C，
+// 之后 pkg3 的 sidecar 校验失败让整个事务失败。回滚必须按写入的反序走：
+// 先撤 pkg2 得到 B，再撤 pkg1 得到 A。顺序反了就会停在 B。
+void TestReverseRollbackRestoresOriginal() {
+	std::string Root = "/tmp/lunar_reverse_root";
+	std::string CoreDir = "/tmp/lunar_reverse_core";
+	std::string Pkg1 = "/tmp/lunar_reverse_pkg1";
+	std::string Pkg2 = "/tmp/lunar_reverse_pkg2";
+	std::string Pkg3 = "/tmp/lunar_reverse_pkg3";
+
+	fs::remove_all(Root);
+	fs::remove_all(CoreDir);
+	fs::remove_all(Pkg1);
+	fs::remove_all(Pkg2);
+	fs::remove_all(Pkg3);
+
+	// 最初的内容 A
+	fs::create_directories(Root + "/usr/bin");
+	{
+		std::ofstream Original(Root + "/usr/bin/tool");
+		Original << "A";
+	}
+
+	// pkg1：把 usr/bin/tool 覆盖成 B
+	fs::create_directories(Pkg1 + "/files/usr/bin");
+	{
+		std::ofstream Meta(Pkg1 + "/meta.yaml");
+		Meta << "name: alpha\n"
+		     << "namespace: demo\n"
+		     << "version: 1.0.0\n"
+		     << "files:\n"
+		     << "  - usr/bin/tool\n";
+	}
+	{
+		std::ofstream Payload(Pkg1 + "/files/usr/bin/tool");
+		Payload << "B";
+	}
+
+	// pkg2：把 usr/bin/tool 再覆盖成 C
+	fs::create_directories(Pkg2 + "/files/usr/bin");
+	{
+		std::ofstream Meta(Pkg2 + "/meta.yaml");
+		Meta << "name: beta\n"
+		     << "namespace: demo\n"
+		     << "version: 1.0.0\n"
+		     << "files:\n"
+		     << "  - usr/bin/tool\n";
+	}
+	{
+		std::ofstream Payload(Pkg2 + "/files/usr/bin/tool");
+		Payload << "C";
+	}
+
+	// pkg3：只负责让事务失败，payload 与 usr/bin/tool 无关
+	fs::create_directories(Pkg3 + "/files/usr/bin");
+	{
+		std::ofstream Meta(Pkg3 + "/meta.yaml");
+		Meta << "name: gamma\n"
+		     << "namespace: demo\n"
+		     << "version: 1.0.0\n"
+		     << "files:\n"
+		     << "  - usr/bin/gamma\n";
+	}
+	{
+		std::ofstream Payload(Pkg3 + "/files/usr/bin/gamma");
+		Payload << "G";
+	}
+
+	ArtifactBuilder::BuildOptions Opts1;
+	Opts1.output_path = "/tmp/reverse1.oaa";
+	auto Built1 = ArtifactBuilder::build(Pkg1, Opts1);
+	assert(Built1.has_value() && fs::exists(*Built1));
+
+	ArtifactBuilder::BuildOptions Opts2;
+	Opts2.output_path = "/tmp/reverse2.oaa";
+	auto Built2 = ArtifactBuilder::build(Pkg2, Opts2);
+	assert(Built2.has_value() && fs::exists(*Built2));
+
+	ArtifactBuilder::BuildOptions Opts3;
+	Opts3.output_path = "/tmp/reverse3.oaa";
+	auto Built3 = ArtifactBuilder::build(Pkg3, Opts3);
+	assert(Built3.has_value() && fs::exists(*Built3));
+
+	// pkg3 的 sidecar 故意写错，装到它时事务失败
+	{
+		std::ofstream Sidecar(*Built3 + ".sha256");
+		Sidecar << "0000000000000000000000000000000000000000000000000000000000000000";
+	}
+
+	setenv("LUNAR_INSTALL_ROOT", Root.c_str(), 1);
+
+	LunarCore Core(CoreDir);
+	auto Result = Core.install({*Built1, *Built2, *Built3});
+
+	// 事务必须失败
+	assert(!Result.success);
+
+	// 关键断言：逆序回滚之后要回到最初的内容 A
+	assert(fs::exists(Root + "/usr/bin/tool"));
+	std::ifstream Restored(Root + "/usr/bin/tool");
+	std::string Content;
+	std::getline(Restored, Content);
+	assert(Content == "A");
+
+	// pkg3 从来没写进去过，它的文件不该出现
+	assert(!fs::exists(Root + "/usr/bin/gamma"));
+
+	unsetenv("LUNAR_INSTALL_ROOT");
+	fs::remove_all(Root);
+	fs::remove_all(CoreDir);
+	fs::remove_all(Pkg1);
+	fs::remove_all(Pkg2);
+	fs::remove_all(Pkg3);
+	fs::remove(*Built1);
+	fs::remove(*Built2);
+	fs::remove(*Built3);
+	fs::remove(*Built3 + ".sha256");
+	std::cout << "[PASS] test_reverse_rollback_restores_original\n";
+}
+
 int main() {
     std::cout << "Running okrapm / lunar comprehensive test suite...\n";
     test_version();
@@ -557,6 +678,7 @@ int main() {
     test_network_downloader();
     test_remote_repository_and_distribution();
     test_plugin_entries();
+    TestReverseRollbackRestoresOriginal();
     std::cout << "All Lunar tests passed successfully (100%)!\n";
     return 0;
 }

@@ -129,18 +129,52 @@ bool copy_payload(const fs::path& payload, const fs::path& root, std::vector<Pay
     return true;
 }
 
-void rollback_payload(std::vector<PayloadEdit>& edits) {
-    std::error_code ec;
+// 按写入的反序撤销这次 payload：原本存在的从 backup 还原，原本不存在的直接删除。
+// 返回 true 表示每一项都还原成功。有一项没还原就返回 false，
+// 对应的 backup 会留在磁盘上，调用方不要再清理它。
+bool rollback_payload(std::vector<PayloadEdit>& edits) {
+    bool complete = true;
     for (auto it = edits.rbegin(); it != edits.rend(); ++it) {
+        std::error_code ec;
         if (it->directory) {
             fs::remove(it->path, ec);
+            if (ec) complete = false;
             continue;
         }
-        fs::remove(it->path, ec);
-        if (!it->backup.empty()) place_node(it->backup, it->path);
+        if (it->backup.empty()) {
+            fs::remove(it->path, ec);
+            if (ec) complete = false;
+            continue;
+        }
+        // 先把这次写进去的内容挪到一边，再去还原 backup。
+        // 不能反过来先删再还原：一旦还原失败，目标路径就空了，
+        // 那比回滚之前更难收拾。
+        fs::path displaced = it->path;
+        displaced += ".lunar-displaced";
+        fs::remove(displaced, ec);
+        ec.clear();
+        bool parked = false;
+        if (fs::exists(fs::symlink_status(it->path, ec))) {
+            ec.clear();
+            fs::rename(it->path, displaced, ec);
+            parked = !ec;
+        }
+        if (!place_node(it->backup, it->path)) {
+            // 还原失败。把挪走的内容放回原位，保证目标路径不是空的，
+            // 并且保留 backup 供人工恢复。
+            if (parked) {
+                std::error_code undo;
+                fs::remove(it->path, undo);
+                fs::rename(displaced, it->path, undo);
+            }
+            complete = false;
+            continue;
+        }
+        fs::remove(displaced, ec);
         fs::remove(it->backup, ec);
     }
     edits.clear();
+    return complete;
 }
 }
 
@@ -561,15 +595,30 @@ bool LunarCore::commit_transaction(Transaction& txn) {
     snapshot_mgr_->create(*system_store_, "Auto snapshot before txn " + std::to_string(txn.id()));
 
     auto rollback_applied = [](AppliedPackage& item) {
-        rollback_payload(item.files);
+        bool complete = rollback_payload(item.files);
         std::error_code ec;
-        fs::remove_all(item.backup_root, ec);
-        if (item.program_live.empty()) return;
+        // 文件没还原干净就保留备份区，那是人工恢复的唯一线索
+        if (complete) fs::remove_all(item.backup_root, ec);
+        if (item.program_live.empty()) return complete;
         fs::remove_all(item.program_live, ec);
-        if (item.program_replaced) fs::rename(item.program_previous, item.program_live, ec);
+        if (item.program_replaced) {
+            ec.clear();
+            fs::rename(item.program_previous, item.program_live, ec);
+            if (ec) complete = false;
+        }
+        return complete;
     };
     auto fail_transaction = [&](const std::string& message) {
-        for (auto it = applied.rbegin(); it != applied.rend(); ++it) rollback_applied(*it);
+        bool complete = true;
+        for (auto it = applied.rbegin(); it != applied.rend(); ++it) {
+            if (!rollback_applied(*it)) complete = false;
+        }
+        // 只有文件系统确实回到原样才推进到 RolledBack。
+        // 没还原干净就停在 Failed，否则状态会说谎，而且备份要留着。
+        if (!complete) {
+            txn.advance_state(TransactionState::Failed, message + " (rollback incomplete, backups kept)");
+            return false;
+        }
         txn.advance_state(TransactionState::Failed, message);
         txn.advance_state(TransactionState::RolledBack);
         return false;
@@ -728,7 +777,8 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                     const char* package_error = extracted ? apply_package(staging, item, op, upgrade)
                                                           : "Local artifact installation failed";
                     if (package_error) {
-                        rollback_applied(item);
+                        // 交给统一的回滚逻辑，它按逆序处理，当前包排在最后
+                        applied.push_back(std::move(item));
                         fs::remove_all(staging);
                         return fail_transaction(package_error);
                     }
@@ -755,7 +805,8 @@ bool LunarCore::commit_transaction(Transaction& txn) {
                         const char* package_error = extracted ? apply_package(staging, item, op, upgrade)
                                                               : "Artifact installation failed";
                         if (package_error) {
-                            rollback_applied(item);
+                            // 交给统一的回滚逻辑，它按逆序处理，当前包排在最后
+                            applied.push_back(std::move(item));
                             fs::remove_all(staging);
                             return fail_transaction(package_error);
                         }
