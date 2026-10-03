@@ -1,15 +1,18 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -D_GNU_SOURCE
 TARGET = okpm
-SRC = okpm.c
+OBJS = util.o store.o pkg.o cmd.o globals.o
 
 PREFIX ?= /usr/local
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
 
-static: $(SRC)
-	$(CC) $(CFLAGS) -static -o $(TARGET) $(SRC)
+%.o: %.c okpm.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+static: $(OBJS)
+	$(CC) $(CFLAGS) -static -o $(TARGET) $(OBJS)
 
 install: $(TARGET)
 	cp $(TARGET) $(PREFIX)/bin/
@@ -18,7 +21,7 @@ uninstall:
 	rm -f $(PREFIX)/bin/$(TARGET)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(OBJS)
 
 test: $(TARGET)
 	./$(TARGET) help

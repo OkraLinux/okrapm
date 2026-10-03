@@ -16,7 +16,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Iterable
 
-
 def extract_meta(archive: Path) -> str:
     with tarfile.open(archive, "r:*") as tf:
         for name in ("meta.yaml", "./meta.yaml"):
@@ -36,7 +35,6 @@ def extract_meta(archive: Path) -> str:
                 return data.read().decode("utf-8", errors="replace")
     raise FileNotFoundError(f"no meta.yaml in {archive}")
 
-
 def iter_artifacts(repo_root: Path) -> Iterable[Path]:
     artifacts = repo_root / "artifacts"
     if not artifacts.is_dir():
@@ -44,7 +42,6 @@ def iter_artifacts(repo_root: Path) -> Iterable[Path]:
     for path in sorted(artifacts.iterdir()):
         if path.suffix in {".oaa", ".okra"} and path.is_file():
             yield path
-
 
 def build_index(repo_root: Path) -> str:
     chunks: list[str] = []
@@ -59,12 +56,10 @@ def build_index(repo_root: Path) -> str:
         chunks.append(meta)
     return "\n---\n".join(chunks) + ("\n" if chunks else "")
 
-
 def write_index(repo_root: Path) -> Path:
     index = repo_root / "index.yaml"
     index.write_text(build_index(repo_root), encoding="utf-8")
     return index
-
 
 class RepoHandler(SimpleHTTPRequestHandler):
     repo_root: Path
@@ -127,7 +122,6 @@ lunar install GNU.gcc</pre>
             host = "10.0.2.2"
         return f"http://{host}:{port}"
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="OkraPM / Lunar software source")
     parser.add_argument(
@@ -153,7 +147,6 @@ def main() -> None:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
-
 
 if __name__ == "__main__":
     main()

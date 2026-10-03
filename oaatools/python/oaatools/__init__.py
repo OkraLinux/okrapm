@@ -77,25 +77,21 @@ class OaaBuilder:
         with open(meta_file, "r", encoding="utf-8") as f:
             meta = OaaMetadata.from_yaml(f.read())
 
-        # Pre-build hook
         pre_hook = src / "scripts" / "pre-build"
         if pre_hook.exists() and os.access(pre_hook, os.X_OK):
             os.system(f"cd {src} && ./scripts/pre-build")
 
         out_file = output_path or f"{meta.name}-{meta.version}.oaa"
-        
-        # Tar build
+
         tar_cmd = f"tar --zstd -cf '{out_file}' --exclude=./'{Path(out_file).name}' -C '{src}' . 2>/dev/null"
         if os.system(tar_cmd) != 0:
             tar_cmd = f"tar -czf '{out_file}' -C '{src}' ."
             os.system(tar_cmd)
 
-        # Hash calculation
         sha = OaaBuilder.calculate_sha256(out_file)
         with open(f"{out_file}.sha256", "w", encoding="utf-8") as f:
             f.write(f"{sha}  {Path(out_file).name}\n")
 
-        # Post-build hook
         post_hook = src / "scripts" / "post-build"
         if post_hook.exists() and os.access(post_hook, os.X_OK):
             os.system(f"cd {src} && ./scripts/post-build")
@@ -106,7 +102,6 @@ class OaaBuilder:
     def inspect(archive_path: str) -> Optional[OaaMetadata]:
         if not os.path.exists(archive_path):
             return None
-        # Extract meta.yaml stream
         cmd = f"tar --zstd -xf '{archive_path}' -O ./meta.yaml 2>/dev/null || tar -xzf '{archive_path}' -O ./meta.yaml 2>/dev/null || tar -xf '{archive_path}' -O meta.yaml 2>/dev/null"
         stream = os.popen(cmd).read()
         if not stream:

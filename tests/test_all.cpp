@@ -13,6 +13,7 @@
 #include "okrapmlib/extension_api.h"
 #include "okrapmlib/pipeline_engine.h"
 #include "okrapmlib/network_downloader.h"
+#include "okrapm-opsis-bridge/bridge.h"
 
 using namespace okrapm;
 namespace fs = std::filesystem;
@@ -21,7 +22,7 @@ void test_version() {
     auto v1 = Version::parse("14.2");
     assert(v1.has_value());
     assert(v1->major() == 14 && v1->minor() == 2);
-    
+
     auto v2 = Version::parse("14.1.0");
     assert(v2.has_value());
     assert(*v1 > *v2);
@@ -41,11 +42,9 @@ void test_object_and_collection() {
 
     assert(col.count() == 3);
 
-    // Pipeline test: where namespace == gnu
     auto gnu_pkgs = col.where([](const Object& o) { return o.ns() == "gnu"; });
     assert(gnu_pkgs.count() == 2);
 
-    // Select names
     auto names = gnu_pkgs.select<std::string>([](const Object& o) { return o.name(); });
     assert(names.count() == 2);
 
@@ -79,7 +78,6 @@ void test_lunar_core_flow() {
 
     LunarCore core(test_dir);
 
-    // 1. 初始化仓库中的测试对象
     auto repo = core.repositories().get_repository("main");
     assert(repo != nullptr);
     auto* local_repo = dynamic_cast<LocalRepository*>(repo);
@@ -105,38 +103,31 @@ void test_lunar_core_flow() {
     local_repo->add_object(kde_group);
     local_repo->save();
 
-    // 2. 测试计划与安装
-    auto plan_res = core.install({"gnu.gcc"}, /*plan_only=*/true);
+    auto plan_res = core.install({"gnu.gcc"}, true);
     assert(plan_res.success);
-    assert(plan_res.transaction.operations().size() == 3); // glibc, binutils, gcc
+    assert(plan_res.transaction.operations().size() == 3);
 
     auto install_res = core.install({"gnu.gcc"});
     assert(install_res.success);
     assert(install_res.transaction.state() == TransactionState::Committed);
 
-    // 3. 验证已安装列表
     auto installed = core.list_installed();
     assert(installed.count() == 3);
 
-    // 4. 验证查找
     auto find_res = core.find("gnu.*");
     assert(find_res.count() == 3);
 
-    // 5. 测试快照
     auto snap = core.create_snapshot("Initial test snapshot");
     assert(snap.objects.size() == 3);
 
-    // 6. 测试卸载
     auto remove_res = core.remove({"gnu.gcc"});
     assert(remove_res.success);
     assert(core.list_installed().count() == 2);
 
-    // 7. 测试回滚快照
     bool rb_ok = core.rollback(snap.id);
     assert(rb_ok);
     assert(core.list_installed().count() == 3);
 
-    // 8. 测试 Group 安装
     auto grp_res = core.install({"#kde.kde-desktop"});
     assert(grp_res.success);
 
@@ -153,7 +144,6 @@ void test_artifact_engine() {
     fs::create_directories(test_dir + "/files/usr/bin");
     fs::create_directories(test_dir + "/scripts");
 
-    // 写入 meta.yaml
     std::ofstream meta_ofs(test_dir + "/meta.yaml");
     meta_ofs << "name: hello\n"
              << "namespace: demo\n"
@@ -166,24 +156,20 @@ void test_artifact_engine() {
              << "  - usr/bin/hello\n";
     meta_ofs.close();
 
-    // 写入 payload 文件
     std::ofstream bin_ofs(test_dir + "/files/usr/bin/hello");
     bin_ofs << "#!/bin/sh\necho \"Hello from Lunar\"\n";
     bin_ofs.close();
 
-    // 写入 pre-build 脚本
     std::ofstream pre_ofs(test_dir + "/scripts/pre-build");
     pre_ofs << "#!/bin/sh\nexit 0\n";
     pre_ofs.close();
 
-    // 1. 测试构建
     ArtifactBuilder::BuildOptions opts;
     opts.output_path = "/tmp/hello-1.0.0.oaa";
     auto built_file = ArtifactBuilder::build(test_dir, opts);
     assert(built_file.has_value());
     assert(fs::exists(*built_file));
 
-    // 2. 测试检查元数据 (inspect)
     auto meta = ArtifactExtractor::inspect(*built_file);
     assert(meta.has_value());
     assert(meta->name == "hello");
@@ -192,13 +178,11 @@ void test_artifact_engine() {
     assert(!meta->checksum.empty());
     assert(meta->dependencies.size() == 1 && meta->dependencies[0] == "gnu.glibc");
 
-    // 3. 测试解压 (extract)
     bool ext_ok = ArtifactExtractor::extract(*built_file, extract_dir);
     assert(ext_ok);
     assert(fs::exists(extract_dir + "/meta.yaml"));
     assert(fs::exists(extract_dir + "/files/usr/bin/hello"));
 
-    // 4. 测试通过 LunarCore 直接安装 Artifact
     std::string core_dir = "/tmp/lunar_art_core_test";
     fs::remove_all(core_dir);
     LunarCore core(core_dir);
@@ -209,7 +193,6 @@ void test_artifact_engine() {
     assert(inst_obj->name() == "hello");
     assert(inst_obj->ns() == "demo");
 
-    // 5. 测试 .okra 格式包构建、元数据解析 (deps/desc) 以及通过 LunarCore 加载与安装
     std::string okra_dir = "/tmp/test_okra_pkg";
     fs::remove_all(okra_dir);
     fs::create_directories(okra_dir + "/files/usr/bin");
@@ -246,7 +229,6 @@ void test_artifact_engine() {
     fs::remove_all(okra_core_dir);
     LunarCore okra_core(okra_core_dir);
 
-    // 验证 okrapm 后端扩展已自动加载
     bool has_okrapm_ext = false;
     for (const auto& item : ExtensionApi::instance().list_extensions()) {
         if (item.name == "okrapm") {
@@ -268,7 +250,6 @@ void test_artifact_engine() {
     fs::remove(*built_okra);
     fs::remove_all(okra_core_dir);
 
-    // 清理
     fs::remove_all(test_dir);
     fs::remove_all(extract_dir);
     fs::remove(*built_file);
@@ -279,7 +260,6 @@ void test_artifact_engine() {
 void test_extension_and_hooks() {
     auto& ext = ExtensionApi::instance();
 
-    // 1. 注册自定义扩展操作
     bool custom_op_executed = false;
     ext.register_operation("docker-status", "Check docker subsystem status",
                            [&](const std::vector<std::string>& args) {
@@ -290,14 +270,15 @@ void test_extension_and_hooks() {
     assert(ext.execute_operation("docker-status", {}));
     assert(custom_op_executed);
 
-    // 2. 注册并测试生命周期 Hooks
     int pre_txn_count = 0;
     int post_txn_count = 0;
-    ext.register_hook(HookType::PreTransaction, [&](const Transaction&) {
-        pre_txn_count++;
+    auto pre_counter = std::make_shared<int>(0);
+    auto post_counter = std::make_shared<int>(0);
+    ext.register_hook(HookType::PreTransaction, [pre_counter](const Transaction&) {
+        ++(*pre_counter);
     });
-    ext.register_hook(HookType::PostTransaction, [&](const Transaction&) {
-        post_txn_count++;
+    ext.register_hook(HookType::PostTransaction, [post_counter](const Transaction&) {
+        ++(*post_counter);
     });
 
     std::string core_dir = "/tmp/lunar_hook_test";
@@ -312,8 +293,8 @@ void test_extension_and_hooks() {
 
     auto res = core.install({"app.testapp"});
     assert(res.success);
-    assert(pre_txn_count >= 1);
-    assert(post_txn_count >= 1);
+    assert(*pre_counter >= 1);
+    assert(*post_counter >= 1);
 
     fs::remove_all(core_dir);
     std::cout << "[PASS] test_extension_and_hooks\n";
@@ -388,32 +369,26 @@ void test_pipeline_engine() {
     repo->add_object(dolphin);
     repo->save();
 
-    // 1. Pipeline: find "gnu.*" | where name=gcc | count
     auto r1 = PipelineEngine::execute("find \"gnu.*\" | where name=gcc | count", core);
     assert(r1.success);
     assert(r1.objects.count() == 1);
 
-    // 2. Pipeline: find "*" | where namespace=gnu | count
     auto r2 = PipelineEngine::execute("find \"*\" | where namespace=gnu | count", core);
     assert(r2.success);
     assert(r2.objects.count() == 3);
 
-    // 3. Pipeline: find "gnu.*" | sort name | limit 2 | count
     auto r3 = PipelineEngine::execute("find \"gnu.*\" | sort name | limit 2 | count", core);
     assert(r3.success);
     assert(r3.objects.count() == 2);
 
-    // 4. Pipeline: find "gnu.bash" | install
     auto r4 = PipelineEngine::execute("find \"gnu.bash\" | install", core);
     assert(r4.success);
     assert(core.list_installed().count() == 1);
 
-    // 5. Pipeline: list | inspect
     auto r5 = PipelineEngine::execute("list | inspect", core);
     assert(r5.success);
     assert(r5.objects.count() == 1);
 
-    // 6. Pipeline: find "gnu.gcc" | plan install
     auto r6 = PipelineEngine::execute("find \"gnu.gcc\" | plan install", core);
     assert(r6.success);
     assert(r6.transaction.has_value());
@@ -437,7 +412,6 @@ void test_network_downloader() {
     assert(NetworkDownloader::verify_checksum(test_file, sha));
     assert(!NetworkDownloader::verify_checksum(test_file, "wrong_hash_123456"));
 
-    // 测试 file:// 协议下载
     DownloadOptions opts;
     opts.expected_sha256 = sha;
     auto res = NetworkDownloader::download_file("file://" + test_file, dest_file, opts);
@@ -445,7 +419,6 @@ void test_network_downloader() {
     assert(fs::exists(dest_file));
     assert(res.checksum == sha);
 
-    // 测试字符串下载
     auto str_opt = NetworkDownloader::download_string("file://" + test_file);
     assert(str_opt.has_value());
     assert(*str_opt == "Lunar Network Downloader Test Payload\n");
@@ -467,7 +440,6 @@ void test_remote_repository_and_distribution() {
     fs::create_directories(remote_server_dir + "/artifacts");
     fs::create_directories(mock_pkg_dir + "/files/usr/bin");
 
-    // 1. 创建模拟包源码并构建 .oaa
     std::ofstream meta_ofs(mock_pkg_dir + "/meta.yaml");
     meta_ofs << "name: ripgrep\n"
              << "namespace: tools\n"
@@ -488,7 +460,6 @@ void test_remote_repository_and_distribution() {
     assert(built.has_value());
     assert(fs::exists(*built));
 
-    // 2. 生成远端 index.yaml
     std::ofstream idx_ofs(remote_server_dir + "/index.yaml");
     idx_ofs << "name: ripgrep\n"
             << "namespace: tools\n"
@@ -499,7 +470,6 @@ void test_remote_repository_and_distribution() {
             << "  - usr/bin/rg\n";
     idx_ofs.close();
 
-    // 3. 测试 RemoteRepository 同步
     RemoteRepository remote_repo("community", "file://" + remote_server_dir, core_dir + "/repos/community");
     bool sync_ok = remote_repo.sync();
     assert(sync_ok);
@@ -511,12 +481,10 @@ void test_remote_repository_and_distribution() {
     assert(found_rg->ns() == "tools");
     assert(found_rg->version().to_string() == "14.1.0");
 
-    // 4. 测试 fetch_artifact 下载包
     auto fetched_path = remote_repo.fetch_artifact(*found_rg);
     assert(fetched_path.has_value());
     assert(fs::exists(*fetched_path));
 
-    // 5. 测试 LunarCore 远程安装与分发完整链路
     LunarCore core(core_dir);
     core.repositories().add(std::make_shared<RemoteRepository>(
         "community", "file://" + remote_server_dir, core_dir + "/repos/community"));
@@ -524,13 +492,11 @@ void test_remote_repository_and_distribution() {
     auto sync_res = core.sync({"community"});
     assert(sync_res.success);
 
-    // 仅下载测试
     auto dl_res = core.download({"tools.ripgrep"});
     assert(dl_res.success);
     assert(!dl_res.downloaded_paths.empty());
     assert(fs::exists(dl_res.downloaded_paths[0]));
 
-    // 远程安装测试
     auto inst_res = core.install({"tools.ripgrep"});
     assert(inst_res.success);
     assert(core.list_installed().count() == 1);
@@ -538,7 +504,6 @@ void test_remote_repository_and_distribution() {
     assert(installed_rg.has_value());
     assert(installed_rg->name() == "ripgrep");
 
-    // 清理
     fs::remove_all(remote_server_dir);
     fs::remove_all(mock_pkg_dir);
     fs::remove_all(core_dir);
@@ -547,6 +512,7 @@ void test_remote_repository_and_distribution() {
 
 int main() {
     std::cout << "Running okrapm / lunar comprehensive test suite...\n";
+    install_opsis_lifecycle_runner();
     test_version();
     test_object_and_collection();
     test_object_ref();

@@ -1,5 +1,4 @@
 #!/bin/bash
-# Stage GNU.make + GNU.gcc as Lunar .oaa artifacts (gzip tar for BusyBox tar).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OKRAPM="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,7 +13,6 @@ mkdir -p "$REPO/artifacts" "$SRC"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
-# --- GNU.make (sysroot build against OKRALINUX glibc) ---
 MAKE_TARBALL="$SRC/make-${MAKE_VER}.tar.gz"
 if [ ! -f "$MAKE_TARBALL" ]; then
     echo "==> downloading GNU make $MAKE_VER"
@@ -53,7 +51,6 @@ tar -czf "$MAKE_OAA" -C "$MAKE_PKG" .
 sha256sum "$MAKE_OAA" | awk '{print $1}' > "$MAKE_OAA.sha256"
 echo "==> $MAKE_OAA"
 
-# --- GNU.gcc (reuse existing toolchain payload, Lunar name GNU.gcc) ---
 [ -f "$GCC_OAA" ] || { echo "missing $GCC_OAA"; exit 1; }
 GCC_PKG="$STAGE/GNU.gcc"
 mkdir -p "$GCC_PKG"

@@ -136,13 +136,13 @@ std::optional<Object> Object::deserialize(const std::string& data) {
     if (!token.empty()) process_kv(token);
 
     if (!has_name) return std::nullopt;
-    if (obj.ns_.empty()) obj.ns_ = "okra"; // default namespace
+    if (obj.ns_.empty()) obj.ns_ = "okra";
     return obj;
 }
 
 Artifact::Artifact(std::string path)
     : Object("local", "artifact", {}, ObjectType::Artifact), artifact_path_(std::move(path)) {
-    // deduce name from file path
+
     auto slash = artifact_path_.rfind('/');
     std::string filename = (slash == std::string::npos) ? artifact_path_ : artifact_path_.substr(slash + 1);
     if (filename.size() > 5 && filename.substr(filename.size() - 5) == ".okra") {
@@ -186,4 +186,4 @@ std::optional<Artifact> Artifact::deserialize(const std::string& data) {
     return art;
 }
 
-} // namespace okrapm
+}

@@ -11,10 +11,6 @@ namespace fs = std::filesystem;
 
 namespace okrapm {
 
-// ==========================================
-// LocalRepository
-// ==========================================
-
 LocalRepository::LocalRepository(const std::string& name, const std::string& db_path,
                                  const std::string& url, bool enabled)
     : name_(name), db_path_(db_path), url_(url), enabled_(enabled) {
@@ -143,10 +139,6 @@ void LocalRepository::remove_object(const std::string& ns, const std::string& na
     );
 }
 
-// ==========================================
-// RemoteRepository
-// ==========================================
-
 RemoteRepository::RemoteRepository(const std::string& name, const std::string& url,
                                    const std::string& cache_dir, bool enabled)
     : name_(name), url_(url), cache_dir_(cache_dir), enabled_(enabled) {
@@ -251,7 +243,6 @@ bool RemoteRepository::load() {
 bool RemoteRepository::sync() {
     if (url_.empty()) return false;
 
-    // 尝试拉取 index.yaml 或 index.db
     std::string index_url = url_ + "/index.yaml";
     auto content_opt = NetworkDownloader::download_string(index_url);
     if (!content_opt) {
@@ -271,9 +262,8 @@ bool RemoteRepository::sync() {
     std::string content = *content_opt;
     std::vector<Object> new_objects;
 
-    // 检查是否为 YAML 块格式
     if (content.find("packages:") != std::string::npos || content.find("name:") != std::string::npos) {
-        // 多对象 YAML 解析
+
         std::istringstream iss(content);
         std::string line;
         std::string current_chunk;
@@ -298,7 +288,7 @@ bool RemoteRepository::sync() {
         }
         parse_and_add_chunk(current_chunk);
     } else {
-        // 按照单行序列化解析
+
         std::istringstream iss(content);
         std::string line;
         while (std::getline(iss, line)) {
@@ -325,7 +315,6 @@ std::optional<std::string> RemoteRepository::fetch_artifact(const Object& obj, c
     std::error_code ec;
     fs::create_directories(target_dir, ec);
 
-    // 候选文件名
     std::vector<std::string> filenames = {
         obj.ns() + "." + obj.name() + "@" + obj.version().to_string() + ".oaa",
         obj.name() + "-" + obj.version().to_string() + ".oaa",
@@ -335,12 +324,11 @@ std::optional<std::string> RemoteRepository::fetch_artifact(const Object& obj, c
 
     for (const auto& fname : filenames) {
         std::string dest_path = target_dir + "/" + fname;
-        // 如果本地缓存已存在
+
         if (fs::exists(dest_path) && fs::file_size(dest_path, ec) > 0) {
             return dest_path;
         }
 
-        // 尝试从远程 URL 候选路径下载
         std::vector<std::string> candidate_urls = {
             url_ + "/artifacts/" + fname,
             url_ + "/" + fname,
@@ -357,10 +345,6 @@ std::optional<std::string> RemoteRepository::fetch_artifact(const Object& obj, c
 
     return std::nullopt;
 }
-
-// ==========================================
-// RepositoryManager
-// ==========================================
 
 RepositoryManager::RepositoryManager(const std::string& base_dir)
     : base_dir_(base_dir) {
@@ -393,7 +377,6 @@ RepositoryManager::RepositoryManager(const std::string& base_dir)
             }
         }
 
-        // 若无仓库，则初始化默认 main 仓库
         if (repositories_.empty()) {
             add_repository(std::make_unique<LocalRepository>("main", base_dir_ + "/main/repo.db"));
             save_config();
@@ -583,4 +566,4 @@ void RepositoryManager::save_config() const {
     }
 }
 
-} // namespace okrapm
+}

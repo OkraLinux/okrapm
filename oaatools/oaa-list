@@ -1,6 +1,4 @@
 #!/bin/sh
-# oaa-list - List the contents of a .oaa artifact
-# Usage: oaa-list <file.oaa> [-l]
 
 OAA_LIB="$(dirname "$0")/oaatools-common.sh"
 [ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"

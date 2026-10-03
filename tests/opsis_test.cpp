@@ -1,6 +1,7 @@
 #include "opsis/interpreter.h"
 #include "okrapmlib/artifact_engine.h"
 #include "okrapmlib/lunar_core.h"
+#include "okrapm-opsis-bridge/bridge.h"
 
 #include <sys/stat.h>
 #include <unistd.h>
@@ -983,10 +984,11 @@ void TestTransactionRollback()
 	std::cout << "[PASS] TestTransactionRollback\n";
 }
 
-} // namespace
+}
 
 int main()
 {
+	okrapm::install_opsis_lifecycle_runner();
 	TestInstallScript();
 	TestFailureRollsNoRecord();
 	TestEscapeAndSyntax();
