@@ -61,9 +61,9 @@ Transaction::Summary Transaction::summary() const {
             default: break;
         }
     }
-    // Estimate sizes (placeholder heuristics)
+
     if (s.install_count > 0 || s.update_count > 0) {
-        size_t dl_mb = (s.install_count + s.update_count) * 15; // rough ~15MB per package
+        size_t dl_mb = (s.install_count + s.update_count) * 15;
         s.download_size = std::to_string(dl_mb) + " MB";
         s.disk_size = "+" + std::to_string(dl_mb * 3) + " MB";
     } else if (s.remove_count > 0) {
@@ -166,4 +166,4 @@ std::optional<Transaction> Transaction::deserialize(const std::string& data) {
     return txn;
 }
 
-} // namespace okrapm
+}

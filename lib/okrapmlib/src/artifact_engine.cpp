@@ -174,7 +174,6 @@ std::optional<std::string> ArtifactBuilder::build(const std::string& source_dir,
         return std::nullopt;
     }
 
-    // 执行 pre-build 脚本
     std::string pre_build = source_dir + "/scripts/pre-build";
     if (fs::exists(pre_build)) {
         ArtifactExtractor::execute_hook(pre_build);
@@ -185,13 +184,12 @@ std::optional<std::string> ArtifactBuilder::build(const std::string& source_dir,
         output_file = meta->name + "-" + meta->version.to_string() + ".oaa";
     }
 
-    // 打包压缩
     std::string tar_cmd;
     if (options.compression == "zstd") {
         tar_cmd = "tar --zstd -cf \"" + output_file + "\" -C \"" + source_dir + "\" . 2>/dev/null";
         int ret = std::system(tar_cmd.c_str());
         if (ret != 0) {
-            // fallback to zstd / gzip
+
             tar_cmd = "tar -czf \"" + output_file + "\" -C \"" + source_dir + "\" . 2>/dev/null";
             ret = std::system(tar_cmd.c_str());
             if (ret != 0) {
@@ -215,7 +213,6 @@ std::optional<std::string> ArtifactBuilder::build(const std::string& source_dir,
         return std::nullopt;
     }
 
-    // 执行 post-build 脚本
     std::string post_build = source_dir + "/scripts/post-build";
     if (fs::exists(post_build)) {
         ArtifactExtractor::execute_hook(post_build);
@@ -227,7 +224,6 @@ std::optional<std::string> ArtifactBuilder::build(const std::string& source_dir,
 std::optional<ArtifactMetadata> ArtifactExtractor::inspect(const std::string& archive_path) {
     if (!fs::exists(archive_path)) return std::nullopt;
 
-    // 使用 tar 查看/解出 meta.yaml 内容
     std::string cmd = "tar --wildcards -xf \"" + archive_path + "\" \"*meta.yaml\" -O 2>/dev/null || "
                       "tar --zstd --wildcards -xf \"" + archive_path + "\" \"*meta.yaml\" -O 2>/dev/null || "
                       "tar -xzf \"" + archive_path + "\" ./meta.yaml -O 2>/dev/null || "
@@ -235,7 +231,7 @@ std::optional<ArtifactMetadata> ArtifactExtractor::inspect(const std::string& ar
 
     std::string meta_content = exec_command(cmd);
     if (meta_content.empty()) {
-        // 尝试 meta.json
+
         cmd = "tar --wildcards -xf \"" + archive_path + "\" \"*meta.json\" -O 2>/dev/null || "
               "tar --zstd --wildcards -xf \"" + archive_path + "\" \"*meta.json\" -O 2>/dev/null || "
               "tar -xzf \"" + archive_path + "\" ./meta.json -O 2>/dev/null || "
@@ -273,7 +269,6 @@ int ArtifactExtractor::execute_hook(const std::string& script_path,
                                     const std::vector<std::string>& args) {
     if (!fs::exists(script_path)) return 0;
 
-    // 确保有可执行权限
     chmod(script_path.c_str(), 0755);
 
     std::string cmd = "\"" + script_path + "\"";
@@ -294,4 +289,4 @@ std::string ArtifactExtractor::calculate_sha256(const std::string& file_path) {
     return trim(out);
 }
 
-} // namespace okrapm
+}

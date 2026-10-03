@@ -1,6 +1,4 @@
 #!/bin/sh
-# oaatools-common.sh - Shared helper library for OAA tools
-# Compatible with BusyBox ash / bash / dash (POSIX sh)
 
 OAA_COLOR_RED='\033[1;31m'
 OAA_COLOR_GRN='\033[1;32m'
@@ -18,8 +16,6 @@ oaa_die() {
     exit 1
 }
 
-# oaa_get_meta_field <meta.yaml-content> <key>
-# Returns the first value for simple "key: value" lines.
 oaa_get_meta_field() {
     awk -v key="$2" '
         BEGIN { found=0 }
@@ -43,8 +39,6 @@ $1
 EOF
 }
 
-# oaa_get_meta_list <meta.yaml-content> <key>
-# Returns the values for a YAML list block (key:\n  - item\n  - item)
 oaa_get_meta_list() {
     awk -v key="$2" '
         BEGIN { in_block=0 }
@@ -74,8 +68,6 @@ $1
 EOF
 }
 
-# oaa_extract_meta <oaa-file>
-# Dumps the meta.yaml content from an .oaa archive to stdout.
 oaa_extract_meta() {
     oaa_file="$1"
     [ -f "$oaa_file" ] || return 1
@@ -97,8 +89,6 @@ oaa_extract_meta() {
     return 1
 }
 
-# oaa_sha256sum <file>
-# Outputs the SHA256 hash of the given file. Returns nonzero on failure.
 oaa_sha256sum() {
     file="$1"
     [ -f "$file" ] || return 1
@@ -112,7 +102,6 @@ oaa_sha256sum() {
     fi
 }
 
-# oaa_pick_compression: print compression flag for tar based on file ext or content
 oaa_pick_compression() {
     case "$1" in
         *.tar.zst|*.tar.zstd|*.oaa) printf '%s' "--zstd" ;;
@@ -122,7 +111,6 @@ oaa_pick_compression() {
     esac
 }
 
-# oaa_human_size <bytes>
 oaa_human_size() {
     bytes="$1"
     case "$bytes" in

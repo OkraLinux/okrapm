@@ -18,7 +18,7 @@ ExtensionApi::~ExtensionApi() {
 }
 
 void ExtensionApi::register_extension(const ExtensionInfo& info) {
-    // 避免重复注册
+
     for (auto& ext : extensions_) {
         if (ext.name == info.name) {
             ext = info;
@@ -85,7 +85,6 @@ bool ExtensionApi::load_plugin(const std::string& so_path) {
         return false;
     }
 
-    // 查找入口函数
     PluginInitFunc init_fn = reinterpret_cast<PluginInitFunc>(dlsym(handle, "lunar_plugin_init"));
     if (!init_fn) {
         dlclose(handle);
@@ -108,7 +107,7 @@ bool ExtensionApi::load_plugin(const std::string& so_path) {
 }
 
 bool ExtensionApi::load_oaabi_plugin(const std::string& so_path) {
-    // 旧入口保持 RTLD_GLOBAL。OAABI 入口按规范用立即绑定和局部符号。
+
     void* handle = dlopen(so_path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!handle) {
         std::cerr << "Failed to load OAABI plugin " << so_path << ": " << dlerror() << "\n";
@@ -170,4 +169,4 @@ void ExtensionApi::unload_all() {
     plugin_handles_.clear();
 }
 
-} // namespace okrapm
+}

@@ -16,17 +16,11 @@
 
 namespace okrapm {
 
-// LunarCore: Lunar 核心引擎
-// 统一管理所有组件: Repository, Resolver, SystemStore, Snapshot, Extension
-// 核心保持尽可能小:
-//   Object Model, Repository API, Dependency Resolver, Transaction Engine,
-//   System Store, Collection Engine, Extension API
 class LunarCore {
 public:
-    // 初始化核心
+
     LunarCore(const std::string& data_dir = "/var/lib/lunar");
 
-    // ---- 组件访问 ----
     RepositoryManager& repositories() { return *repo_mgr_; }
     const RepositoryManager& repositories() const { return *repo_mgr_; }
 
@@ -41,9 +35,6 @@ public:
 
     ExtensionApi& extensions() { return ExtensionApi::instance(); }
 
-    // ---- 核心操作 ----
-
-    // 安装对象
     struct InstallResult {
         bool success{false};
         Transaction transaction;
@@ -51,7 +42,6 @@ public:
     };
     InstallResult install(const std::vector<std::string>& refs, bool plan_only = false);
 
-    // 删除对象
     struct RemoveResult {
         bool success{false};
         Transaction transaction;
@@ -59,16 +49,12 @@ public:
     };
     RemoveResult remove(const std::vector<std::string>& refs, bool purge = false, bool plan_only = false);
 
-    // 同步
     InstallResult sync(const std::vector<std::string>& targets = {});
 
-    // 更新 (Rolling Release 核心操作)
     InstallResult update(const std::vector<std::string>& refs = {}, bool plan_only = false);
 
-    // 系统级升级
     InstallResult upgradle(const std::vector<std::string>& targets, bool plan_only = false);
 
-    // 仅下载对象 Artifact
     struct DownloadResult {
         bool success{false};
         std::vector<std::string> downloaded_paths;
@@ -76,13 +62,11 @@ public:
     };
     DownloadResult download(const std::vector<std::string>& refs, const std::string& dest_dir = "");
 
-    // 查询
     Collection<Object> find(const std::string& pattern) const;
     Collection<Object> search(const std::string& query) const;
     Collection<Object> list_installed() const;
     std::optional<Object> info(const std::string& ref) const;
 
-    // 系统状态
     struct SystemStatus {
         uint64_t state_id{0};
         size_t installed_count{0};
@@ -92,15 +76,12 @@ public:
     };
     SystemStatus status() const;
 
-    // 事务历史
     std::vector<Transaction> transaction_history() const;
     std::optional<Transaction> get_transaction(uint64_t id) const;
 
-    // 快照操作
     Snapshot create_snapshot(const std::string& description = "");
     bool rollback(uint64_t snapshot_id);
 
-    // 数据目录
     const std::string& data_dir() const { return data_dir_; }
 
 private:
@@ -111,11 +92,9 @@ private:
     std::unique_ptr<SnapshotManager> snapshot_mgr_;
     std::vector<Transaction> transaction_history_;
 
-    // 提交事务
     bool commit_transaction(Transaction& txn);
 
-    // 记录事务
     void record_transaction(const Transaction& txn);
 };
 
-} // namespace okrapm
+}

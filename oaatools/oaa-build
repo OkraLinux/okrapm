@@ -1,6 +1,4 @@
 #!/bin/sh
-# oaa-build - Build a .oaa artifact from a source directory
-# Usage: oaa-build <src-dir> [output.oaa]
 
 OAA_LIB="$(dirname "$0")/oaatools-common.sh"
 [ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
@@ -43,13 +41,11 @@ pkg_ver="$(oaa_get_meta_field "$meta_content" version)"
 
 [ -z "$output_path" ] && output_path="${pkg_name}-${pkg_ver}.oaa"
 
-# Pre-build hook
 if [ -x "$src_dir/scripts/pre-build" ]; then
     oaa_info "Running pre-build hook..."
     ( cd "$src_dir" && ./scripts/pre-build ) || oaa_warn "pre-build returned non-zero"
 fi
 
-# Choose compression: prefer zstd, fallback to gzip
 comp_flag=""
 if tar --help 2>&1 | grep -q -- '--zstd'; then
     comp_flag="--zstd"
@@ -58,7 +54,6 @@ else
 fi
 oaa_info "Compressing with: $comp_flag"
 
-# Build a clean tarball (excluding .oaa outputs and .git)
 tar_cmd="tar $comp_flag -cf \"$output_path\" \
     --exclude=./$(basename "$output_path") \
     --exclude=./$(basename "$output_path" .oaa).oaa.sig \
@@ -75,11 +70,9 @@ fi
 
 [ -f "$output_path" ] || oaa_die "archive generation produced no file"
 
-# Inject / refresh checksum into a sidecar file (.oaa.sha256)
 sha256="$(oaa_sha256sum "$output_path")" || oaa_die "cannot compute SHA256"
 echo "$sha256  $(basename "$output_path")" > "$output_path.sha256"
 
-# Post-build hook
 if [ -x "$src_dir/scripts/post-build" ]; then
     oaa_info "Running post-build hook..."
     ( cd "$src_dir" && ./scripts/post-build ) || oaa_warn "post-build returned non-zero"

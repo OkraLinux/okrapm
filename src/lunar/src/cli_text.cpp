@@ -34,7 +34,7 @@ void Paint(std::ostream &Out, const char *Code, const std::string &Text, bool En
 	else Out << Text;
 }
 
-} // namespace
+}
 
 namespace Cli {
 
@@ -168,4 +168,4 @@ void Help()
 	});
 }
 
-} // namespace Cli
+}

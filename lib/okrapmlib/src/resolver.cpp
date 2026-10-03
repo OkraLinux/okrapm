@@ -24,7 +24,7 @@ std::optional<Object> Resolver::get_installed(const std::string& ns, const std::
 
 std::optional<Object> Resolver::resolve_ref(const ObjectRef& ref) const {
     if (ref.type() == ObjectType::Artifact) {
-        // Artifact directly wraps a local file
+
         return Artifact(ref.artifact_path());
     }
     if (!repo_mgr_) return std::nullopt;
@@ -95,7 +95,6 @@ Resolver::ResolveResult Resolver::resolve_install(const std::vector<ObjectRef>& 
         std::string key = current_ref.ns() + "." + current_ref.name();
         if (queued.count(key)) continue;
 
-        // Group handling: expand group members into queue
         if (current_ref.type() == ObjectType::Group) {
             auto group_obj = repo_mgr_->find_by_ref(current_ref);
             if (!group_obj) {
@@ -109,7 +108,6 @@ Resolver::ResolveResult Resolver::resolve_install(const std::vector<ObjectRef>& 
             continue;
         }
 
-        // Artifact handling
         if (current_ref.type() == ObjectType::Artifact) {
             Artifact art(current_ref.artifact_path());
             to_install.push_back(art);
@@ -117,21 +115,19 @@ Resolver::ResolveResult Resolver::resolve_install(const std::vector<ObjectRef>& 
             continue;
         }
 
-        // Resolve object from repos
         auto obj = resolve_ref(current_ref);
         if (!obj) {
             result.errors.push_back("Object not found: " + current_ref.to_string());
             continue;
         }
 
-        // Check if already installed with same version
         auto installed_obj = get_installed(obj->ns(), obj->name());
         if (installed_obj) {
             if (installed_obj->version() >= obj->version()) {
-                // Already satisfied
+
                 continue;
             }
-            // Will update
+
             result.updated_packages++;
             Operation op(OperationType::Update, *obj, *installed_obj);
             result.operations.push_back(op);
@@ -141,13 +137,11 @@ Resolver::ResolveResult Resolver::resolve_install(const std::vector<ObjectRef>& 
         }
         queued.insert(key);
 
-        // Circular check
         std::unordered_set<std::string> circ_visited;
         if (has_circular_dependency(obj->ns(), obj->name(), circ_visited)) {
             result.warnings.push_back("Potential circular dependency in: " + obj->full_name());
         }
 
-        // Add dependencies to queue
         for (const auto& dep_str : obj->dependencies()) {
             auto dep_ref = ObjectRef::parse(dep_str);
             if (dep_ref) {
@@ -164,7 +158,6 @@ Resolver::ResolveResult Resolver::resolve_install(const std::vector<ObjectRef>& 
         return result;
     }
 
-    // Topological sort for install operations (dependencies first)
     auto sorted = topological_sort(to_install);
     for (const auto& obj : sorted) {
         result.operations.push_back(Operation(OperationType::Install, obj));
@@ -188,7 +181,6 @@ Resolver::ResolveResult Resolver::resolve_remove(const std::vector<ObjectRef>& r
             continue;
         }
 
-        // Check reverse dependencies
         auto rev_deps = reverse_dependencies(inst->ns(), inst->name());
         if (!rev_deps.empty() && !purge) {
             std::string msg = "Cannot remove " + inst->full_name() + ", depended upon by:";
@@ -200,7 +192,7 @@ Resolver::ResolveResult Resolver::resolve_remove(const std::vector<ObjectRef>& r
         }
 
         if (purge) {
-            // Cascade remove all dependents
+
             std::queue<Object> cascade_queue;
             cascade_queue.push(*inst);
             while (!cascade_queue.empty()) {
@@ -246,7 +238,6 @@ Resolver::ResolveResult Resolver::resolve_update(const std::vector<ObjectRef>& r
 
     std::vector<ObjectRef> targets = refs;
 
-    // If no targets given, update all installed objects that are outdated
     if (targets.empty()) {
         for (const auto& inst : installed_) {
             auto avail = repo_mgr_->find(inst.ns(), inst.name());
@@ -269,12 +260,12 @@ Resolver::ResolveResult Resolver::resolve_update(const std::vector<ObjectRef>& r
 Resolver::ResolveResult Resolver::resolve_sync(const std::vector<ObjectRef>& refs) {
     ResolveResult result;
     if (refs.empty()) {
-        // Sync everything
+
         if (repo_mgr_) repo_mgr_->sync_all();
     } else {
         for (const auto& ref : refs) {
             if (ref.type() == ObjectType::System) {
-                // Sync system object
+
                 if (repo_mgr_) {
                     auto obj = repo_mgr_->find_by_ref(ref);
                     if (obj) {
@@ -282,7 +273,7 @@ Resolver::ResolveResult Resolver::resolve_sync(const std::vector<ObjectRef>& ref
                     }
                 }
             } else {
-                // Sync specific repo
+
                 if (repo_mgr_) repo_mgr_->sync_repository(ref.name());
             }
         }
@@ -318,7 +309,7 @@ std::vector<Object> Resolver::topological_sort(const std::vector<Object>& object
         for (const auto& dep_str : obj.dependencies()) {
             auto dep_ref = ObjectRef::parse(dep_str);
             if (dep_ref) {
-                // Find in our objects list
+
                 for (const auto& candidate : objects) {
                     if (candidate.name() == dep_ref->name() &&
                         (dep_ref->ns().empty() || candidate.ns() == dep_ref->ns())) {
@@ -337,4 +328,4 @@ std::vector<Object> Resolver::topological_sort(const std::vector<Object>& object
     return sorted;
 }
 
-} // namespace okrapm
+}

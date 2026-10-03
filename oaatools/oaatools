@@ -1,7 +1,4 @@
 #!/bin/sh
-# oaatools - Main dispatcher for OAA toolkit
-# Usage: oaatools <command> [args...]
-#         (also installable as /usr/bin/oaa)
 
 OAA_TOOLS_DIR="$(dirname "$0")"
 OAA_LIB="$OAA_TOOLS_DIR/oaatools-common.sh"

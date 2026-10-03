@@ -41,7 +41,7 @@ bool SystemStore::load() {
         if (obj) {
             installed_.push_back(*obj);
         } else {
-            // 兼容 okpm 格式行: name version path
+
             std::istringstream iss(line);
             std::string name, ver_str, path;
             if (iss >> name >> ver_str >> path) {
@@ -134,4 +134,4 @@ SystemState SystemStore::current_state() const {
     return st;
 }
 
-} // namespace okrapm
+}

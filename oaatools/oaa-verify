@@ -1,6 +1,4 @@
 #!/bin/sh
-# oaa-verify - Verify integrity of a .oaa artifact
-# Usage: oaa-verify <file.oaa>
 
 OAA_LIB="$(dirname "$0")/oaatools-common.sh"
 [ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
@@ -12,7 +10,6 @@ oaa_file="$1"
 
 oaa_title "Verifying: $oaa_file"
 
-# Step 1: SHA256 sidecar
 if [ -f "$oaa_file.sha256" ]; then
     rec_sum="$(awk '{print $1}' "$oaa_file.sha256")"
     cur_sum="$(oaa_sha256sum "$oaa_file")"
@@ -29,7 +26,6 @@ else
     printf '  %s\n' "$(oaa_sha256sum "$oaa_file")"
 fi
 
-# Step 2: Embedded checksum field in meta.yaml
 meta_content="$(oaa_extract_meta "$oaa_file")"
 if [ -n "$meta_content" ]; then
     embedded_sum="$(oaa_get_meta_field "$meta_content" checksum)"
@@ -43,7 +39,6 @@ if [ -n "$meta_content" ]; then
     fi
 fi
 
-# Step 3: tar integrity test
 oaa_info "Tar archive integrity test:"
 for attempt in \
     "tar --zstd -tf \"$oaa_file\" >/dev/null 2>&1" \

@@ -89,4 +89,4 @@ std::optional<Operation> Operation::deserialize(const std::string& data) {
     return op;
 }
 
-} // namespace okrapm
+}
