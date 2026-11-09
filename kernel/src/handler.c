@@ -1,12 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/string.h>
-
-/* Stub handler implementations for okrapm kernel module */
-
-/* In a full implementation these would wrap the user-space okrapmlib APIs */
 
 void okrapm_install(const char *pkg)
 {

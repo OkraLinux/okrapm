@@ -1,6 +1,4 @@
 #!/bin/sh
-# oaa-inspect - Inspect metadata of a .oaa artifact
-# Usage: oaa-inspect <file.oaa>
 
 OAA_LIB="$(dirname "$0")/oaatools-common.sh"
 [ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
@@ -31,11 +29,9 @@ printf '  Description:   %s\n' "$desc"
 printf '  Maintainer:    %s\n' "$maint"
 printf '  Installed Sz:  %s\n' "$(oaa_human_size "${isize:-0}")"
 
-# File size on disk
 disk_size="$(wc -c < "$oaa_file")"
 printf '  Artifact Size: %s\n' "$(oaa_human_size "$disk_size")"
 
-# Recorded checksum (from sidecar if present)
 if [ -f "$oaa_file.sha256" ]; then
     rec_sum="$(awk '{print $1}' "$oaa_file.sha256")"
     cur_sum="$(oaa_sha256sum "$oaa_file")"
@@ -48,14 +44,12 @@ else
     printf '  SHA256:        %s (no sidecar)\n' "$(oaa_sha256sum "$oaa_file")"
 fi
 
-# Dependencies list
 deps="$(oaa_get_meta_list "$meta_content" dependencies)"
 if [ -n "$deps" ]; then
     oaa_title "Dependencies:"
     printf '%s\n' "$deps" | sed 's/^/  - /'
 fi
 
-# Files manifest
 files="$(oaa_get_meta_list "$meta_content" files)"
 if [ -n "$files" ]; then
     oaa_title "Manifest:"

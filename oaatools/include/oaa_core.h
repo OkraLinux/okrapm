@@ -35,4 +35,4 @@ public:
     static std::string calculate_sha256(const std::string& file_path);
 };
 
-} // namespace oaa
+}

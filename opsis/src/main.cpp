@@ -5,11 +5,6 @@
 
 namespace {
 
-/**
- * PrintUsage() - 把 opsis 的命令行用法写到标准错误。
- *
- * Return: 无。
- */
 void PrintUsage()
 {
 	std::cerr << "Usage: opsis [--sysroot DIR] [--db DIR] [--allow-nonroot] <script.opsis>\n"
@@ -20,7 +15,7 @@ void PrintUsage()
 		<< "OPSIS_SYSROOT, OPSIS_DB_DIR, OPSIS_ALLOW_NONROOT, OPSIS_PKG_* and OPSIS_BUILD_DIR apply.\n";
 }
 
-} // namespace
+}
 
 int main(int Argc, char **Argv)
 {

@@ -9,7 +9,6 @@ std::optional<ObjectRef> ObjectRef::parse(const std::string& str) {
     ObjectRef ref;
     std::string input = str;
 
-    // Check for artifact path (.oaa or .okra or starts with ./)
     if ((input.size() > 4 && input.substr(input.size() - 4) == ".oaa") ||
         (input.size() > 5 && input.substr(input.size() - 5) == ".okra")) {
         ref.type_ = ObjectType::Artifact;
@@ -25,13 +24,11 @@ std::optional<ObjectRef> ObjectRef::parse(const std::string& str) {
         return ref;
     }
 
-    // Check for group marker '#'
     if (input.front() == '#') {
         ref.type_ = ObjectType::Group;
         input = input.substr(1);
     }
 
-    // Check for version delimiter '@'
     auto at_pos = input.find('@');
     std::string name_part = input;
     if (at_pos != std::string::npos) {
@@ -43,12 +40,10 @@ std::optional<ObjectRef> ObjectRef::parse(const std::string& str) {
         ref.raw_version_ = ver_str;
     }
 
-    // Check for wildcard pattern (e.g., "gnu.*")
     if (name_part.find('*') != std::string::npos) {
         ref.is_pattern_ = true;
     }
 
-    // Parse namespace.name
     auto dot_pos = name_part.find('.');
     if (dot_pos != std::string::npos) {
         if (dot_pos == 0 || dot_pos == name_part.size() - 1 ||
@@ -58,14 +53,13 @@ std::optional<ObjectRef> ObjectRef::parse(const std::string& str) {
         ref.ns_ = name_part.substr(0, dot_pos);
         ref.name_ = name_part.substr(dot_pos + 1);
     } else {
-        // No namespace specified, treat entire string as name with default namespace
+
         ref.ns_ = "";
         ref.name_ = name_part;
     }
 
     if (ref.name_.empty() && !ref.is_pattern_) return std::nullopt;
 
-    // Distinguish system objects (e.g., okra.system*)
     if (ref.type_ == ObjectType::Package && ref.ns_ == "okra" && ref.name_.rfind("system", 0) == 0) {
         ref.type_ = ObjectType::System;
     }
@@ -93,16 +87,15 @@ std::string ObjectRef::to_string() const {
 }
 
 bool ObjectRef::matches(const Object& obj) const {
-    // Type match
+
     if (type_ != obj.type()) {
-        // If ref is Package but target is System (or vice versa), allow if names match
+
         if (!((type_ == ObjectType::Package && obj.type() == ObjectType::System) ||
               (type_ == ObjectType::System && obj.type() == ObjectType::Package))) {
             return false;
         }
     }
 
-    // Pattern matching (e.g., ns="gnu", name="*")
     if (is_pattern_) {
         if (!ns_.empty() && ns_ != "*" && ns_ != obj.ns()) {
             return false;
@@ -116,7 +109,6 @@ bool ObjectRef::matches(const Object& obj) const {
         }
     }
 
-    // Exact match
     if (!ns_.empty() && ns_ != obj.ns()) {
         return false;
     }
@@ -124,7 +116,6 @@ bool ObjectRef::matches(const Object& obj) const {
         return false;
     }
 
-    // Version match if specified
     if (version_.has_value()) {
         if (obj.version() != *version_) {
             return false;
@@ -148,4 +139,4 @@ bool ObjectRef::matches_pattern(const std::string& pattern, const std::string& s
     return pattern == str;
 }
 
-} // namespace okrapm
+}

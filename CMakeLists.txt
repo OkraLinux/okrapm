@@ -7,24 +7,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(opsis)
 add_subdirectory(lib/okrapmlib)
+add_subdirectory(bridge)
 add_subdirectory(src/lunar)
 
 enable_testing()
 enable_language(C)
 
 add_library(oaabi_sample MODULE tests/plugins/oaabi_sample.c)
-target_include_directories(oaabi_sample PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(oaabi_sample PRIVATE ${CMAKE_SOURCE_DIR}/lib/okrapmlib/include)
 set_target_properties(oaabi_sample PROPERTIES PREFIX "" OUTPUT_NAME oaabi_sample)
 
 add_library(oaabi_bad MODULE tests/plugins/oaabi_bad.c)
-target_include_directories(oaabi_bad PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(oaabi_bad PRIVATE ${CMAKE_SOURCE_DIR}/lib/okrapmlib/include)
 set_target_properties(oaabi_bad PROPERTIES PREFIX "" OUTPUT_NAME oaabi_bad)
 
 add_library(legacy_plugin MODULE tests/plugins/legacy_plugin.cpp)
 set_target_properties(legacy_plugin PROPERTIES PREFIX "" OUTPUT_NAME legacy_plugin)
 
 add_executable(lunar_test tests/test_all.cpp)
-target_link_libraries(lunar_test PRIVATE okrapmlib)
+target_link_libraries(lunar_test PRIVATE okrapmlib okrapm_opsis_bridge)
 target_compile_definitions(lunar_test PRIVATE
 	"LEGACY_PLUGIN_PATH=\"$<TARGET_FILE:legacy_plugin>\""
 	"OAABI_PLUGIN_PATH=\"$<TARGET_FILE:oaabi_sample>\""
@@ -37,7 +38,7 @@ add_test(
     COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/host-repo-loop.sh $<TARGET_FILE:lunar>
 )
 add_executable(opsis_test tests/opsis_test.cpp)
-target_link_libraries(opsis_test PRIVATE opsislib okrapmlib)
+target_link_libraries(opsis_test PRIVATE opsislib okrapmlib okrapm_opsis_bridge)
 add_test(NAME OpsisTest COMMAND opsis_test)
 
 include(${CMAKE_SOURCE_DIR}/cmake/OpsisPackage.cmake)

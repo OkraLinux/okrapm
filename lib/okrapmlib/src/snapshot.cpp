@@ -64,7 +64,6 @@ bool SnapshotManager::load() {
                 snap.description = desc;
                 snap.label = "System #" + std::to_string(id);
 
-                // 读取对应的对象列表
                 std::ifstream sifs(snapshot_path(id));
                 if (sifs.is_open()) {
                     std::string sline;
@@ -96,7 +95,6 @@ bool SnapshotManager::save() const {
         auto time_sec = std::chrono::duration_cast<std::chrono::seconds>(snap.timestamp.time_since_epoch()).count();
         ofs << snap.id << "|" << time_sec << "|" << snap.description << "\n";
 
-        // 保存对应对象的快照
         std::ofstream sofs(snapshot_path(snap.id));
         if (sofs.is_open()) {
             sofs << "# Snapshot #" << snap.id << "\n";
@@ -139,7 +137,6 @@ SnapshotManager::RestorePlan SnapshotManager::restore_plan(uint64_t snapshot_id,
 
     auto current_installed = store.list_installed();
 
-    // 找出在 snapshot 中但当前没有安装，或者版本不同的对象 -> to_install
     for (const auto& target_obj : snap->objects) {
         auto cur_obj = store.find(target_obj.ns(), target_obj.name());
         if (!cur_obj || cur_obj->version() != target_obj.version()) {
@@ -147,7 +144,6 @@ SnapshotManager::RestorePlan SnapshotManager::restore_plan(uint64_t snapshot_id,
         }
     }
 
-    // 找出在当前安装但 snapshot 中没有的对象 -> to_remove
     for (const auto& cur_obj : current_installed) {
         bool in_snapshot = false;
         for (const auto& target_obj : snap->objects) {
@@ -169,12 +165,10 @@ bool SnapshotManager::restore(uint64_t snapshot_id, SystemStore& store) {
     auto snap = get(snapshot_id);
     if (!snap) return false;
 
-    // 先删除需要移除的
     for (const auto& obj : plan.to_remove) {
         store.remove(obj.ns(), obj.name());
     }
 
-    // 再安装/恢复需要的对象
     for (const auto& obj : plan.to_install) {
         store.install(obj);
     }
@@ -195,4 +189,4 @@ bool SnapshotManager::remove(uint64_t id) {
     return save();
 }
 
-} // namespace okrapm
+}

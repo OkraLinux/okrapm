@@ -6,6 +6,7 @@ add_executable(lunar
 target_link_libraries(lunar
     PRIVATE
         okrapmlib
+        okrapm_opsis_bridge
 )
 
 target_compile_features(lunar PRIVATE cxx_std_17)

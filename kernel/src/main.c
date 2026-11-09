@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -8,7 +7,6 @@
 #include <linux/slab.h>
 #include "okrapm.h"
 
-/* Forward declarations */
 static ssize_t install_store(struct kobject *kobj, struct kobj_attribute *attr,
                              const char *buf, size_t count);
 static ssize_t remove_store(struct kobject *kobj, struct kobj_attribute *attr,
@@ -16,7 +14,6 @@ static ssize_t remove_store(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t list_show(struct kobject *kobj, struct kobj_attribute *attr,
                          char *buf);
 
-/* Sysfs attributes */
 static struct kobj_attribute install_attr = __ATTR_WO(install);
 static struct kobj_attribute remove_attr  = __ATTR_WO(remove);
 static struct kobj_attribute list_attr    = __ATTR_RO(list);
@@ -65,7 +62,6 @@ static void __exit okrapm_exit(void)
     }
 }
 
-/* Sysfs write handler for "install" */
 static ssize_t install_store(struct kobject *kobj, struct kobj_attribute *attr,
                              const char *buf, size_t count)
 {
@@ -81,7 +77,6 @@ static ssize_t install_store(struct kobject *kobj, struct kobj_attribute *attr,
     return count;
 }
 
-/* Sysfs write handler for "remove" */
 static ssize_t remove_store(struct kobject *kobj, struct kobj_attribute *attr,
                             const char *buf, size_t count)
 {
@@ -97,7 +92,6 @@ static ssize_t remove_store(struct kobject *kobj, struct kobj_attribute *attr,
     return count;
 }
 
-/* Sysfs read handler for "list" */
 static ssize_t list_show(struct kobject *kobj, struct kobj_attribute *attr,
                          char *buf)
 {

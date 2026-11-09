@@ -9,6 +9,7 @@
 #include "okrapmlib/lunar_core.h"
 #include "okrapmlib/artifact_engine.h"
 #include "okrapmlib/pipeline_engine.h"
+#include "okrapm-opsis-bridge/bridge.h"
 #include "cli_text.h"
 
 using namespace okrapm;
@@ -81,8 +82,8 @@ int main(int argc, char* argv[]) {
     }
 
     LunarCore core(data_dir);
+    install_opsis_lifecycle_runner();
 
-    // ---- Pipeline Stream Processing (pipe) ----
     if (command == "pipe") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar pipe '<expr>'");
@@ -103,7 +104,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Artifact Packaging (build) ----
     if (command == "build") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar build <source_dir> [output_file.oaa]");
@@ -125,7 +125,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- Artifact Verification (verify) ----
     if (command == "verify") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar verify <file.oaa>");
@@ -151,7 +150,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Artifact Sub-commands (artifact) ----
     if (command == "artifact") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar artifact <inspect|verify|extract> ...");
@@ -211,7 +209,7 @@ int main(int argc, char* argv[]) {
             std::string file = raw_args[2];
             std::string dest = raw_args[3];
             Cli::TaskBegin("extract", file);
-            if (ArtifactExtractor::extract(file, dest, /*verbose=*/false)) {
+            if (ArtifactExtractor::extract(file, dest, false)) {
                 Cli::TaskOk(dest);
                 return 0;
             } else {
@@ -221,7 +219,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- Plan 预览模式 ----
     if (command == "plan") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar plan <install|remove|update|upgradle> <ref...>");
@@ -232,7 +229,7 @@ int main(int argc, char* argv[]) {
         args = expand_stdin_targets(args);
 
         if (sub_cmd == "install") {
-            auto res = core.install(args, /*plan_only=*/true);
+            auto res = core.install(args, true);
             Cli::TaskBegin("plan install", JoinWords(args));
             if (!res.success && res.transaction.operations().empty()) {
                 Cli::TaskFail(res.error_message);
@@ -242,7 +239,7 @@ int main(int argc, char* argv[]) {
             Cli::TaskOk(res.transaction.operations().empty() ? "nothing to do" : "not applied");
             return 0;
         } else if (sub_cmd == "remove") {
-            auto res = core.remove(args, /*purge=*/false, /*plan_only=*/true);
+            auto res = core.remove(args, false, true);
             Cli::TaskBegin("plan remove", JoinWords(args));
             if (!res.success && res.transaction.operations().empty()) {
                 Cli::TaskFail(res.error_message);
@@ -252,7 +249,7 @@ int main(int argc, char* argv[]) {
             Cli::TaskOk(res.transaction.operations().empty() ? "nothing to do" : "not applied");
             return 0;
         } else if (sub_cmd == "update") {
-            auto res = core.update(args, /*plan_only=*/true);
+            auto res = core.update(args, true);
             Cli::TaskBegin("plan update", JoinWords(args));
             if (!res.success && res.transaction.operations().empty()) {
                 Cli::TaskFail(res.error_message);
@@ -262,7 +259,7 @@ int main(int argc, char* argv[]) {
             Cli::TaskOk(res.transaction.operations().empty() ? "nothing to do" : "not applied");
             return 0;
         } else if (sub_cmd == "upgradle") {
-            auto res = core.upgradle(args, /*plan_only=*/true);
+            auto res = core.upgradle(args, true);
             Cli::TaskBegin("plan upgradle", JoinWords(args));
             if (!res.success && res.transaction.operations().empty()) {
                 Cli::TaskFail(res.error_message);
@@ -277,7 +274,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- Install ----
     if (command == "install") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar install <ref...>");
@@ -298,7 +294,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- Install Group ----
     if (command == "install-group") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar install-group <name>");
@@ -320,7 +315,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- Download (Fetch only) ----
     if (command == "download") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar download <ref...>");
@@ -342,7 +336,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- Remove / Purge ----
     if (command == "remove" || command == "purge") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar " + command + " <ref...>");
@@ -364,7 +357,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- Update (Rolling update) ----
     if (command == "update") {
         std::vector<std::string> targets(raw_args.begin() + 1, raw_args.end());
         targets = expand_stdin_targets(targets);
@@ -385,7 +377,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Upgradle (System-level baseline upgrade) ----
     if (command == "upgradle") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar upgradle <target...>");
@@ -404,7 +395,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- Sync ----
     if (command == "sync") {
         std::vector<std::string> targets(raw_args.begin() + 1, raw_args.end());
 
@@ -418,7 +408,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- Find (Pattern query) ----
     if (command == "find") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar find <pattern>");
@@ -434,7 +423,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Search ----
     if (command == "search") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar search <query>");
@@ -450,7 +438,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- List Installed ----
     if (command == "list") {
         auto col = core.list_installed();
         std::vector<std::vector<std::string>> rows;
@@ -461,7 +448,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Info ----
     if (command == "info") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar info <ref>");
@@ -493,7 +479,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Members (Group expand) ----
     if (command == "members") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar members <#group>");
@@ -512,7 +497,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Status ----
     if (command == "status") {
         auto st = core.status();
         std::string repos;
@@ -530,7 +514,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ---- Transaction ----
     if (command == "transaction") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar transaction <list|show <id>>");
@@ -564,7 +547,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- Snapshot & Rollback ----
     if (command == "snapshot") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar snapshot <list|create [desc]>");
@@ -627,7 +609,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- Repository ----
     if (command == "repo") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar repo <list|add|remove|enable|disable>");
@@ -691,7 +672,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ---- Extensions & Plugins ----
     if (command == "ext") {
         if (raw_args.size() < 2) {
             Cli::Error("usage: lunar ext <list|load|run> ...");

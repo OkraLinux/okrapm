@@ -65,7 +65,6 @@ DownloadResult NetworkDownloader::download_file(const std::string& url,
         fs::create_directories(parent, ec);
     }
 
-    // 1. 本地 file:// 协议或本地路径
     if (url.rfind("file://", 0) == 0 || url.front() == '/') {
         std::string local_path = (url.rfind("file://", 0) == 0) ? url.substr(7) : url;
         if (!fs::exists(local_path)) {
@@ -92,7 +91,6 @@ DownloadResult NetworkDownloader::download_file(const std::string& url,
         return res;
     }
 
-    // 2. HTTP / HTTPS 协议
     int retries = 0;
     int max_retries = std::max(1, options.max_retries);
 
@@ -104,7 +102,7 @@ DownloadResult NetworkDownloader::download_file(const std::string& url,
 
         int ret = std::system(cmd.c_str());
         if (ret != 0) {
-            // fallback to wget
+
             cmd = "wget -q --timeout=" + std::to_string(options.timeout_seconds) +
                   " --user-agent=\"" + options.user_agent + "\"" +
                   " -O \"" + temp_dest + "\" \"" + url + "\" 2>/dev/null";
@@ -145,7 +143,6 @@ std::optional<std::string> NetworkDownloader::download_string(const std::string&
                                                               const DownloadOptions& options) {
     if (url.empty()) return std::nullopt;
 
-    // file:// 或绝对路径
     if (url.rfind("file://", 0) == 0 || url.front() == '/') {
         std::string local_path = (url.rfind("file://", 0) == 0) ? url.substr(7) : url;
         std::ifstream ifs(local_path);
@@ -160,7 +157,6 @@ std::optional<std::string> NetworkDownloader::download_string(const std::string&
         return content;
     }
 
-    // fallback to wget
     cmd = "wget -qO- --timeout=" + std::to_string(options.timeout_seconds) +
           " --user-agent=\"" + options.user_agent + "\" \"" + url + "\" 2>/dev/null";
     content = exec_cmd(cmd);
@@ -171,4 +167,4 @@ std::optional<std::string> NetworkDownloader::download_string(const std::string&
     return std::nullopt;
 }
 
-} // namespace okrapm
+}

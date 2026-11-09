@@ -1,6 +1,4 @@
 #!/bin/sh
-# oaa-new - Scaffold a new OAA package source directory
-# Usage: oaa-new <package-dir> [--name NAME] [--namespace NS] [--version VER]
 
 OAA_LIB="$(dirname "$0")/oaatools-common.sh"
 [ -f "$OAA_LIB" ] || OAA_LIB="/usr/lib/okrapm/oaatools-common.sh"
@@ -59,25 +57,21 @@ files:
 EOF
 
 cat > "$pkg_dir/scripts/pre-build" <<'EOF'
-#!/bin/sh
 echo "[pre-build] preparing $name $version"
 EOF
 chmod +x "$pkg_dir/scripts/pre-build"
 
 cat > "$pkg_dir/scripts/post-build" <<'EOF'
-#!/bin/sh
 echo "[post-build] artifact packaged"
 EOF
 chmod +x "$pkg_dir/scripts/post-build"
 
 cat > "$pkg_dir/scripts/pre-install" <<'EOF'
-#!/bin/sh
 echo "[pre-install] about to install"
 EOF
 chmod +x "$pkg_dir/scripts/pre-install"
 
 cat > "$pkg_dir/scripts/post-install" <<'EOF'
-#!/bin/sh
 echo "[post-install] install complete"
 EOF
 chmod +x "$pkg_dir/scripts/post-install"
@@ -94,7 +88,6 @@ public class Package {
 EOF
 
 cat > "$pkg_dir/rootfs/usr/bin/$name" <<EOF
-#!/bin/sh
 echo "$name $version - installed via OkraPM OAA"
 EOF
 chmod +x "$pkg_dir/rootfs/usr/bin/$name"

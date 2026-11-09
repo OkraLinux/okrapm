@@ -118,4 +118,4 @@ bool Version::operator>=(const Version& other) const {
     return other <= *this;
 }
 
-} // namespace okrapm
+}

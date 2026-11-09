@@ -91,7 +91,6 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
 
         std::string cmd = tokens[0];
 
-        // ---- 1. Source Stages ----
         if (cmd == "find" || cmd == "search" || cmd == "list" || cmd == "groups" || cmd == "installed") {
             has_source = true;
             if (cmd == "find") {
@@ -110,12 +109,11 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
         }
 
         if (!has_source) {
-            // 如果第一个阶段不是显式 source，默认以已安装对象为 source
+
             stream = core.list_installed();
             has_source = true;
         }
 
-        // ---- 2. Filter Stage (where) ----
         if (cmd == "where" || cmd == "filter") {
             if (tokens.size() < 2) {
                 res.error_message = "Syntax error: 'where' expects a condition (e.g. outdated, installed, repository=main)";
@@ -124,7 +122,7 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
             std::string condition = tokens[1];
 
             if (condition == "outdated") {
-                // 判断哪些已安装的包有更新版本
+
                 auto all_available = core.find("*");
                 std::unordered_map<std::string, Version> latest_versions;
                 for (const auto& avail : all_available.to_vector()) {
@@ -167,7 +165,7 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
                            ObjectRef::matches_pattern(pat, o.full_name());
                 });
             } else {
-                // 默认按 pattern 匹配
+
                 stream = stream.where([condition](const Object& o) {
                     return ObjectRef::matches_pattern(condition, o.full_name()) ||
                            ObjectRef::matches_pattern(condition, o.name());
@@ -176,7 +174,6 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
             continue;
         }
 
-        // ---- 3. Transform Stages ----
         if (cmd == "sort") {
             std::string field = (tokens.size() > 1) ? tokens[1] : "name";
             if (field == "name") {
@@ -225,7 +222,6 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
             continue;
         }
 
-        // ---- 4. Sink Stages ----
         if (cmd == "inspect") {
             std::ostringstream oss;
             oss << "Collection<Object> (" << stream.count() << " items):\n";
@@ -258,7 +254,7 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
                 res.success = true;
                 return res;
             }
-            auto update_res = core.update(refs, /*plan_only=*/false);
+            auto update_res = core.update(refs, false);
             res.success = update_res.success;
             res.transaction = update_res.transaction;
             res.error_message = update_res.error_message;
@@ -278,7 +274,7 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
                 res.success = true;
                 return res;
             }
-            auto inst_res = core.install(refs, /*plan_only=*/false);
+            auto inst_res = core.install(refs, false);
             res.success = inst_res.success;
             res.transaction = inst_res.transaction;
             res.error_message = inst_res.error_message;
@@ -298,7 +294,7 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
                 res.success = true;
                 return res;
             }
-            auto rem_res = core.remove(refs, /*purge=*/false, /*plan_only=*/false);
+            auto rem_res = core.remove(refs, false, false);
             res.success = rem_res.success;
             res.transaction = rem_res.transaction;
             res.error_message = rem_res.error_message;
@@ -320,19 +316,19 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
             }
 
             if (sub == "update") {
-                auto pres = core.update(refs, /*plan_only=*/true);
+                auto pres = core.update(refs, true);
                 res.success = pres.success;
                 res.transaction = pres.transaction;
                 res.output = pres.transaction.to_string() + "\n";
                 return res;
             } else if (sub == "install") {
-                auto pres = core.install(refs, /*plan_only=*/true);
+                auto pres = core.install(refs, true);
                 res.success = pres.success;
                 res.transaction = pres.transaction;
                 res.output = pres.transaction.to_string() + "\n";
                 return res;
             } else if (sub == "remove") {
-                auto pres = core.remove(refs, /*purge=*/false, /*plan_only=*/true);
+                auto pres = core.remove(refs, false, true);
                 res.success = pres.success;
                 res.transaction = pres.transaction;
                 res.output = pres.transaction.to_string() + "\n";
@@ -347,7 +343,6 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
         return res;
     }
 
-    // 若末尾没有显式 sink，则默认输出 inspect 格式
     std::ostringstream oss;
     oss << "Collection<Object> (" << stream.count() << " items):\n";
     for (const auto& obj : stream.to_vector()) {
@@ -362,4 +357,4 @@ PipelineResult PipelineEngine::execute(const std::string& pipeline_str, LunarCor
     return res;
 }
 
-} // namespace okrapm
+}

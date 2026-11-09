@@ -230,4 +230,4 @@ std::vector<std::string> OaaCore::list_contents(const std::string& pkg_path) {
     return res;
 }
 
-} // namespace oaa
+}
